@@ -15,16 +15,45 @@
  *   the TUI component (and omk-tui) never loads on that path.
  * - Web/extension observations are never involved; this tool only carries the
  *   model's own plan text.
+ * - Spec 049: with `OMK_TODO_VERIFY` on (read once, at load) items also take
+ *   optional `kind`, `difficulty` and `check`, and the verifier module is loaded
+ *   here. Off, the factory stays synchronous and the schema, description and
+ *   result text are exactly main's.
  */
 
 import { StringEnum, Type } from "omk-ai";
 import { resetCurrentTodoState, setCurrentTodoState } from "../../todo-runtime-state.ts";
-import type { TodoState, TodoStatus } from "../../todo-state.ts";
-import { EMPTY_TODO_STATE, setTodoItems, summary } from "../../todo-state.ts";
+import type { TodoItem, TodoState, TodoStatus } from "../../todo-state.ts";
+import { EMPTY_TODO_STATE, resolveTodoVerify, setTodoItems, summary } from "../../todo-state.ts";
 import type { ExtensionAPI } from "../types.ts";
 
-export default function todoChecklist(omk: ExtensionAPI): void {
+type TodoVerify = typeof import("../../todo-verify.ts");
+
+export interface TodoChecklistOptions {
+	readonly env?: NodeJS.ProcessEnv;
+}
+
+export default function todoChecklist(omk: ExtensionAPI, options: TodoChecklistOptions = {}): void | Promise<void> {
+	const env = options.env ?? process.env;
+	if (!resolveTodoVerify(env.OMK_TODO_VERIFY)) return registerTodoChecklist(omk, undefined, env);
+	return import("../../todo-verify.ts").then((verify) => registerTodoChecklist(omk, verify, env));
+}
+
+const ITEM_FIELDS = {
+	id: Type.String({ description: "Stable identifier for the task (reuse across updates)." }),
+	label: Type.String({ description: "Short human-readable task description." }),
+	status: StringEnum(["pending", "active", "done", "blocked"], {
+		description: "pending=not started, active=in progress, done=complete, blocked=stuck.",
+	}),
+	detail: Type.Optional(Type.String({ description: "Optional extra context for the task." })),
+};
+
+function registerTodoChecklist(omk: ExtensionAPI, verify: TodoVerify | undefined, env: NodeJS.ProcessEnv): void {
 	let state: TodoState = EMPTY_TODO_STATE;
+	// Typed as main's fields: with the flag on the extra fields reach `normalizeTodoFields` untyped, and only there.
+	const itemFields = (
+		verify ? { ...ITEM_FIELDS, ...verify.TODO_VERIFY_ITEM_FIELDS } : ITEM_FIELDS
+	) as typeof ITEM_FIELDS;
 
 	omk.on("session_start", () => {
 		state = EMPTY_TODO_STATE;
@@ -44,24 +73,26 @@ export default function todoChecklist(omk: ExtensionAPI): void {
 			"Set exactly one item to 'active' (the task in progress); mark finished items 'done' and blockers 'blocked'.",
 		],
 		parameters: Type.Object({
-			items: Type.Array(
-				Type.Object({
-					id: Type.String({ description: "Stable identifier for the task (reuse across updates)." }),
-					label: Type.String({ description: "Short human-readable task description." }),
-					status: StringEnum(["pending", "active", "done", "blocked"], {
-						description: "pending=not started, active=in progress, done=complete, blocked=stuck.",
-					}),
-					detail: Type.Optional(Type.String({ description: "Optional extra context for the task." })),
-				}),
-				{ description: "Full current list of checklist items." },
-			),
+			items: Type.Array(Type.Object(itemFields), { description: "Full current list of checklist items." }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			state = setTodoItems(
 				state,
-				params.items.map((item) => ({ ...item, status: item.status as TodoStatus })),
+				params.items.map(
+					(item): TodoItem =>
+						verify
+							? {
+									id: item.id,
+									label: item.label,
+									status: item.status as TodoStatus,
+									...(item.detail !== undefined ? { detail: item.detail } : {}),
+									...verify.normalizeTodoFields(item),
+								}
+							: { ...item, status: item.status as TodoStatus },
+				),
 			);
 			setCurrentTodoState(state);
+			if (verify) verify.logTodoSnapshot(state.items, env);
 			const snapshot = state;
 			// Only a UI session mounts the widget. With a UI present, a failed import
 			// or setWidget is a real bug, so it surfaces instead of being swallowed.
@@ -76,7 +107,7 @@ export default function todoChecklist(omk: ExtensionAPI): void {
 				content: [
 					{
 						type: "text",
-						text: `TODO updated: ${s.done}/${s.total} done · ${s.active} active · ${s.pending} pending · ${s.blocked} blocked`,
+						text: `TODO updated: ${s.done}/${s.total} done · ${s.active} active · ${s.pending} pending · ${s.blocked} blocked${verify ? `\n${verify.todoChecksLine(state.items)}` : ""}`,
 					},
 				],
 				details: { summary: s, total: s.total },
