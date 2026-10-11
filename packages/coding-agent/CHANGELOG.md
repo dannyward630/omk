@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Breaking
+
+- Subagent workers no longer load user extensions: the worker command line now includes `--no-extensions`. Skills, the command-safety gate and the todo checklist are unchanged, and the extension that registered the worker's model provider is still loaded automatically. To keep extensions in workers, set `OMK_WORKER_EXTENSIONS=all` or a comma-separated list of extension names (for example `OMK_WORKER_EXTENSIONS=my-mcp-adapter`).
+
 ### Added
 
 - Experimental `OMK_SKILL_SEARCH=1` (default off) for sessions with more than 24 model-invocable skills and the `read` tool: the system prompt replaces the skill list with one fixed line, a fixed `skill_search` tool ranks skills by name and description (BM25), and up to three new candidates arrive as a hidden message at each task start. The index is built on first use, never at startup, and cached in `cache/skill-index-v1.json` under the agent directory. Subagent workers keep the tool without automatic candidates. With `OMK_RUN_LOG_DIR`, `skill-select.jsonl` gets hash-only records. If another tool is already named `skill_search`, the session stays as without the flag. Off, or with 24 skills or fewer, requests are unchanged. See [skills](docs/skills.md#skill-search-omk_skill_search).

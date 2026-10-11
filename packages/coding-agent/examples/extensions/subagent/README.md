@@ -92,6 +92,15 @@ To enable project-local agents, pass `agentScope: "both"` (or `"project"`). Only
 
 When running interactively, the tool prompts for confirmation before running project-local agents. Set `confirmProjectAgents: false` to disable.
 
+### Extensions in workers
+
+Workers start with `--no-extensions`: your global and project extensions (`extensions/` directories, `extensions` and `packages` entries) do not load in them. Skills, prompt templates, context files, the command-safety gate and the todo checklist are unchanged. The parent's own `-e` paths are not passed down either.
+
+- **Provider auto-forward:** if the worker's model (pinned in the agent file or inherited from the session) comes from a provider an extension registered, that one extension is loaded in the worker as `-e <absolute path>`. An extension that only overrides a built-in provider's `baseUrl`/`headers` counts too.
+- **Opt back in:** set `OMK_WORKER_EXTENSIONS=all` to keep full discovery in workers, or a comma-separated list such as `OMK_WORKER_EXTENSIONS=my-mcp-adapter,memory` to load those extensions. Entries are matched against the extensions this session loaded, by absolute path or by name (package name for `npm:`/`git:` packages, otherwise the file name without extension, or the directory name for `index.ts`). A name shared by two extensions loads neither; use the absolute path. Package sources (`npm:…`, `git:…`, `https://…`) are never forwarded.
+- **Warnings:** problems are printed once to stderr as `omk subagent: OMK_WORKER_EXTENSIONS: …` and never stop a spawn. On the first spawn, an extension that changes provider requests (`before_provider_request`) and stays out of workers is named with the setting that keeps it.
+- `OMK_WORKER_EXTENSIONS` is passed to workers unchanged, so a worker that spawns workers applies the same rule.
+
 ## Usage
 
 ### Single agent
@@ -231,6 +240,7 @@ Project agents override user agents with the same name when `agentScope: "both"`
 - Output truncated to last 10 items in collapsed view (expand to see all)
 - Parallel model-visible output is capped at 50 KB per task; full results remain in tool details
 - Agents discovered fresh on each invocation (allows editing mid-session)
+- Workers load no user extensions by default, so extension tools (for example from an MCP adapter) are missing there unless `OMK_WORKER_EXTENSIONS` names the extension; see [Extensions in workers](#extensions-in-workers)
 - Outside Ultra, parallel mode is limited to 8 tasks and 4 concurrent processes; Ultra has no extension-imposed count or concurrency cap and can consume substantial host/provider resources
 - Automatic semantic pre-sharding requires an explicit numbered/checklist action list; indivisible prose is checkpointed and resumed as one shard
 - Checkpoints are best-effort child artifacts plus runtime-captured stream evidence; workspace side effects remain the source of truth after a cutoff

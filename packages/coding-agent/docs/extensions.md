@@ -138,6 +138,8 @@ Additional paths via `settings.json`:
 
 To share extensions via npm or git as omk packages, see [packages.md](packages.md).
 
+Subagent workers start with `--no-extensions`, so these extensions do not load in them unless `OMK_WORKER_EXTENSIONS` names them; the extension that registered the worker's model provider is loaded automatically (see [environment variables](environment-variables.md)).
+
 ## Available Imports
 
 | Package | Purpose |
