@@ -13,6 +13,8 @@
  * the worker cwd's gated items hash the same (`workerProjectTrustEnv`), or "0" when
  * the parent runs with it forced off. Workers inherit `OMK_SKILL_SEARCH` but never
  * get automatic skill candidate messages (spec 050 R7).
+ * `OMK_WORKER_EXTENSIONS` passes through unchanged (spec 057 R8), so a worker that
+ * spawns its own workers applies the same rule.
  */
 const LEAD_ONLY_VARS = [
 	"OMK_TIME_BUDGET_SEC",

@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+
+// Spec 057: tests read the worker argv back from this file.
+if (process.env.OMK_FAKE_ARGV_FILE) {
+	appendFileSync(process.env.OMK_FAKE_ARGV_FILE, `${JSON.stringify(process.argv.slice(2))}\n`);
+}
 
 const expectedModel = process.env.OMK_EXPECTED_MODEL;
 if (expectedModel) {

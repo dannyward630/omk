@@ -40,6 +40,14 @@ describe("subagentWorkerEnv", () => {
 		expect(subagentWorkerEnv({ PATH: "/bin" }).OMK_RUN_LOG_ROLE).toBeUndefined();
 	});
 
+	it("passes OMK_WORKER_EXTENSIONS through unchanged (spec 057 R8)", () => {
+		expect(subagentWorkerEnv({ OMK_WORKER_EXTENSIONS: " my-mcp-adapter, /x/a.ts " }).OMK_WORKER_EXTENSIONS).toBe(
+			" my-mcp-adapter, /x/a.ts ",
+		);
+		expect(subagentWorkerEnv({ OMK_WORKER_EXTENSIONS: "all" }).OMK_WORKER_EXTENSIONS).toBe("all");
+		expect(subagentWorkerEnv({}).OMK_WORKER_EXTENSIONS).toBeUndefined();
+	});
+
 	it("does not modify the parent environment", () => {
 		const parent = { OMK_TIME_BUDGET_SEC: "900" };
 		subagentWorkerEnv(parent);

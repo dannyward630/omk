@@ -42,6 +42,8 @@ const cleanupPaths: string[] = [];
 const originalArgvEntry = process.argv[1];
 const originalAgentDir = process.env.OMK_CODING_AGENT_DIR;
 const originalExpectedModel = process.env.OMK_EXPECTED_MODEL;
+const originalArgvFile = process.env.OMK_FAKE_ARGV_FILE;
+const originalWorkerExtensions = process.env.OMK_WORKER_EXTENSIONS;
 
 afterEach(async () => {
 	process.argv[1] = originalArgvEntry;
@@ -49,6 +51,10 @@ afterEach(async () => {
 	else process.env.OMK_CODING_AGENT_DIR = originalAgentDir;
 	if (originalExpectedModel === undefined) delete process.env.OMK_EXPECTED_MODEL;
 	else process.env.OMK_EXPECTED_MODEL = originalExpectedModel;
+	if (originalArgvFile === undefined) delete process.env.OMK_FAKE_ARGV_FILE;
+	else process.env.OMK_FAKE_ARGV_FILE = originalArgvFile;
+	if (originalWorkerExtensions === undefined) delete process.env.OMK_WORKER_EXTENSIONS;
+	else process.env.OMK_WORKER_EXTENSIONS = originalWorkerExtensions;
 	await Promise.all(cleanupPaths.splice(0).map((entry) => fs.promises.rm(entry, { recursive: true, force: true })));
 });
 
@@ -111,6 +117,80 @@ describe("subagent extension registration and spawn smoke", () => {
 			resumeCount: 0,
 		});
 		expect(await fs.promises.stat(path.join(agentHome, "state", "subagent-deadline-profiles.json"))).toBeDefined();
+	}, 120_000);
+
+	it("starts the worker with --no-extensions and forwards only the model provider's extension (spec 057)", async () => {
+		const cwd = await fs.promises.mkdtemp(path.join(os.tmpdir(), "omk-subagent-no-extensions-smoke-"));
+		cleanupPaths.push(cwd);
+		const projectAgentsDir = path.join(cwd, ".omk", "agents");
+		const agentHome = path.join(cwd, "agent-home");
+		await fs.promises.mkdir(projectAgentsDir, { recursive: true });
+		await fs.promises.mkdir(agentHome, { recursive: true });
+		await fs.promises.writeFile(
+			path.join(projectAgentsDir, "fixture-agent.md"),
+			"---\nname: fixture-agent\ndescription: Offline extension smoke fixture\n---\nReturn the fixture result.\n",
+			"utf8",
+		);
+		const argvFile = path.join(cwd, "worker-argv.jsonl");
+		process.argv[1] = path.join(import.meta.dirname, "fixtures", "fake-omk-json.mjs");
+		process.env.OMK_CODING_AGENT_DIR = agentHome;
+		process.env.OMK_FAKE_ARGV_FILE = argvFile;
+		delete process.env.OMK_WORKER_EXTENSIONS;
+
+		const loaded = [
+			{
+				name: "codex-auth",
+				path: "/ext/codex-auth.ts",
+				resolvedPath: "/ext/codex-auth.ts",
+				source: "local",
+				scope: "user",
+				origin: "top-level",
+				providers: ["openai-codex"],
+				hooks: [],
+			},
+			{
+				name: "memory",
+				path: "/ext/memory.ts",
+				resolvedPath: "/ext/memory.ts",
+				source: "local",
+				scope: "user",
+				origin: "top-level",
+				providers: [],
+				hooks: ["turn_end"],
+			},
+		];
+		let registered: unknown;
+		const api = {
+			registerTool(tool: unknown) {
+				registered = tool;
+			},
+			[Symbol.for("omk.internal.loadedExtensions")]: () => loaded,
+		} as unknown as ExtensionAPI;
+		const { default: registerSubagent } = await import("./index.ts");
+		registerSubagent(api);
+		if (!isSmokeTool(registered)) throw new Error("subagent tool was not registered");
+
+		const result = await registered.execute(
+			"fixture-no-extensions-call",
+			{
+				agent: "fixture-agent",
+				task: "Run the offline fixture.",
+				agentScope: "project",
+				confirmProjectAgents: false,
+				executionBudgetMs: 120_000,
+				maxResumeAttempts: 0,
+			},
+			new AbortController().signal,
+			undefined,
+			{ cwd, hasUI: false, model: { provider: "openai-codex", id: "session-selected-model" } },
+		);
+
+		expect(result.isError).not.toBe(true);
+		const argv = JSON.parse((await fs.promises.readFile(argvFile, "utf8")).trim().split("\n")[0]!) as string[];
+		const afterSession = argv.indexOf("--no-session") + 1;
+		expect(argv.slice(afterSession, afterSession + 3)).toEqual(["--no-extensions", "-e", "/ext/codex-auth.ts"]);
+		expect(argv).not.toContain("/ext/memory.ts");
+		expect(argv.filter((arg) => arg === "-e")).toHaveLength(1);
 	}, 120_000);
 
 	it("prefers an explicit agent model over the inherited session model", async () => {
