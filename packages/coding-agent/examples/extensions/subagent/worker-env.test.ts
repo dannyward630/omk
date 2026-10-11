@@ -29,6 +29,11 @@ describe("subagentWorkerEnv", () => {
 		expect(subagentWorkerEnv({}).OMK_SKILL_SEARCH_SUGGEST).toBe("0");
 	});
 
+	it("turns typed todo checks off for workers (spec 049 R4)", () => {
+		expect(subagentWorkerEnv({ OMK_TODO_VERIFY: "on" }).OMK_TODO_VERIFY).toBe("0");
+		expect(subagentWorkerEnv({}).OMK_TODO_VERIFY).toBe("0");
+	});
+
 	it("lets OMK_FINISH_CHECK_WORKERS opt workers in", () => {
 		expect(subagentWorkerEnv({ OMK_FINISH_CHECK_WORKERS: "1" }).OMK_FINISH_CHECK).toBe("1");
 	});
