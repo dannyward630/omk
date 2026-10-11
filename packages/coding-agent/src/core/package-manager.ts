@@ -29,7 +29,7 @@ import ignore from "ignore";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { spawnProcess, spawnProcessSync } from "../utils/child-process.ts";
 import { type GitSource, parseGitUrl } from "../utils/git.ts";
-import { canonicalizePath, isLocalPath, markPathIgnoredByCloudSync, resolvePath } from "../utils/paths.ts";
+import { canonicalizeOnce, isLocalPath, markPathIgnoredByCloudSync, resolvePath } from "../utils/paths.ts";
 import { addIgnoreRules, type IgnoreMatcher, toPosixPath } from "./ignore-rules.ts";
 import { isStdoutTakenOver } from "./output-guard.ts";
 import { extractNpmPackageTarball } from "./package-archive.ts";
@@ -703,7 +703,11 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	async resolve(onMissing?: (source: string) => Promise<MissingSourceAction>): Promise<ResolvedPaths> {
+	/** `canonicalPaths` (optional) collects each resolved path's realpath so later reload stages reuse it. */
+	async resolve(
+		onMissing?: (source: string) => Promise<MissingSourceAction>,
+		canonicalPaths?: Map<string, string>,
+	): Promise<ResolvedPaths> {
 		const accumulator = this.createAccumulator();
 		const globalSettings = this.settingsManager.getGlobalSettings();
 		const projectSettings = this.settingsManager.getProjectSettings();
@@ -754,7 +758,7 @@ export class DefaultPackageManager implements PackageManager {
 
 		this.addAutoDiscoveredResources(accumulator, globalSettings, projectSettings, globalBaseDir, projectBaseDir);
 
-		return this.toResolvedPaths(accumulator);
+		return this.toResolvedPaths(accumulator, canonicalPaths);
 	}
 
 	async resolveExtensionSources(
@@ -2478,7 +2482,7 @@ export class DefaultPackageManager implements PackageManager {
 		};
 	}
 
-	private toResolvedPaths(accumulator: ResourceAccumulator): ResolvedPaths {
+	private toResolvedPaths(accumulator: ResourceAccumulator, canonicalPaths?: Map<string, string>): ResolvedPaths {
 		const mapToResolved = (
 			entries: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		): ResolvedResource[] => {
@@ -2491,7 +2495,7 @@ export class DefaultPackageManager implements PackageManager {
 
 			const seen = new Set<string>();
 			return resolved.filter((entry) => {
-				const canonicalPath = canonicalizePath(entry.path);
+				const canonicalPath = canonicalizeOnce(entry.path, canonicalPaths);
 				if (seen.has(canonicalPath)) return false;
 				seen.add(canonicalPath);
 				return true;

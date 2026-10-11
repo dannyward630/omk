@@ -8,7 +8,7 @@ import type { ResourceDiagnostic } from "./diagnostics.ts";
 
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.ts";
 
-import { canonicalizePath, isLocalPath, resolvePath } from "../utils/paths.ts";
+import { type CanonicalPathMemo, canonicalizeOnce, isLocalPath, resolvePath } from "../utils/paths.ts";
 import { loadSkillsWithBundled } from "./bundled-skills.ts";
 import { createEventBus, type EventBus } from "./event-bus.ts";
 import commandSafetyGate from "./extensions/builtin/command-safety-gate.ts";
@@ -389,7 +389,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	async reload(): Promise<void> {
 		await this.settingsManager.reload();
-		const resolvedPaths = await this.packageManager.resolve();
+		// One realpath per path for this reload: resolve() fills it, mergePaths and loadSkills reuse it (spec 055).
+		const canonicalPaths: CanonicalPathMemo = new Map();
+		const resolvedPaths = await this.packageManager.resolve(undefined, canonicalPaths);
 		const cliExtensionPaths = await this.packageManager.resolveExtensionSources(this.additionalExtensionPaths, {
 			temporary: true,
 		});
@@ -544,11 +546,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.applyExtensionSourceInfo(this.extensionsResult.extensions, metadataByPath);
 
 		const skillPaths = this.noSkills
-			? this.mergePaths(cliEnabledSkills, this.additionalSkillPaths)
-			: this.mergePaths([...cliEnabledSkills, ...enabledSkills], this.additionalSkillPaths);
+			? this.mergePaths(cliEnabledSkills, this.additionalSkillPaths, canonicalPaths)
+			: this.mergePaths([...cliEnabledSkills, ...enabledSkills], this.additionalSkillPaths, canonicalPaths);
 
 		this.lastSkillPaths = skillPaths;
-		this.updateSkillsFromPaths(skillPaths, metadataByPath);
+		this.updateSkillsFromPaths(skillPaths, metadataByPath, canonicalPaths);
 		for (const p of this.additionalSkillPaths) {
 			if (isLocalPath(p)) {
 				const resolved = this.resolveResourcePath(p);
@@ -627,7 +629,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 		});
 	}
 
-	private updateSkillsFromPaths(skillPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
+	private updateSkillsFromPaths(
+		skillPaths: string[],
+		metadataByPath?: Map<string, PathMetadata>,
+		canonicalPaths?: CanonicalPathMemo,
+	): void {
 		let skillsResult: { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
 		if (this.noSkills && skillPaths.length === 0) {
 			skillsResult = { skills: [], diagnostics: [] };
@@ -637,6 +643,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				agentDir: this.agentDir,
 				skillPaths,
 				includeDefaults: false,
+				canonicalPaths,
 				resolveSourceInfo: (filePath) =>
 					this.findSourceInfoForPath(filePath, this.extensionSkillSourceInfos, metadataByPath),
 			});
@@ -839,13 +846,13 @@ export class DefaultResourceLoader implements ResourceLoader {
 		};
 	}
 
-	private mergePaths(primary: string[], additional: string[]): string[] {
+	private mergePaths(primary: string[], additional: string[], canonicalPaths?: CanonicalPathMemo): string[] {
 		const merged: string[] = [];
 		const seen = new Set<string>();
 
 		for (const p of [...primary, ...additional]) {
 			const resolved = this.resolveResourcePath(p);
-			const canonicalPath = canonicalizePath(resolved);
+			const canonicalPath = canonicalizeOnce(resolved, canonicalPaths);
 			if (seen.has(canonicalPath)) continue;
 			seen.add(canonicalPath);
 			merged.push(resolved);

@@ -34,6 +34,26 @@ export function canonicalizePath(path: string): string {
 }
 
 /**
+ * Realpath results of one resource reload, keyed by the exact string that was
+ * canonicalized. Stages that dedupe the same paths (package resolve, resource
+ * merge, skill load) share it so each path is resolved once per reload.
+ */
+export type CanonicalPathMemo = Map<string, string>;
+
+/**
+ * `canonicalizePath` that reuses an earlier result for the same input string
+ * from `memo`. Without a memo it is exactly `canonicalizePath`.
+ */
+export function canonicalizeOnce(path: string, memo: CanonicalPathMemo | undefined): string {
+	if (!memo) return canonicalizePath(path);
+	const known = memo.get(path);
+	if (known !== undefined) return known;
+	const canonical = canonicalizePath(path);
+	memo.set(path, canonical);
+	return canonical;
+}
+
+/**
  * Returns true if the value is NOT a package source (npm:, git:, etc.)
  * or a remote URL protocol. Bare names, relative paths, and file: URLs
  * are considered local.
