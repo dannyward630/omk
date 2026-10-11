@@ -26,21 +26,32 @@ interface SdkProviderRuntime {
  * Shared by the main agent and first-party summary calls using agent.streamFn.
  * Spec 033: wrapped with the opt-in per-response reasoning cap (`OMK_RESPONSE_REASONING_CAP=1`).
  * Spec 059: below the cap, one `llm-call.jsonl` line per provider request when `OMK_RUN_LOG_DIR` is set.
+ * The model contract is applied above the log, so the logged `effort`/`effortSent` are read from the
+ * same model and options the provider is called with (#128 review).
  */
 export function createSdkProviderStream(runtime: SdkProviderRuntime): StreamFn {
 	return createResponseReasoningCapStreamFn(
-		createLlmCallRunLogStreamFn(createProviderStream(runtime)),
+		createModelContractStreamFn(createLlmCallRunLogStreamFn(createProviderStream(runtime)), runtime.modelContract),
 		resolveResponseReasoningCapConfig(),
 	);
 }
 
+/** Without a contract the inner stream is returned itself; with one, every request is projected through it. */
+function createModelContractStreamFn(inner: StreamFn, modelContract: ModelContract | undefined): StreamFn {
+	if (modelContract === undefined) return inner;
+	const contract = snapshotModelContract(modelContract);
+	// async, so a contract violation rejects the returned promise as it did inside the provider stream.
+	return async (model, context, options) => {
+		const requestModel = structuredClone(model);
+		const requestOptions = applyModelContract(contract, requestModel, options ?? {});
+		const requestContext = projectToolImagesForModel(context, requestModel).context;
+		return inner(requestModel, requestContext, requestOptions);
+	};
+}
+
 function createProviderStream(runtime: SdkProviderRuntime): StreamFn {
 	const { modelRegistry, settingsManager } = runtime;
-	const contract = runtime.modelContract === undefined ? undefined : snapshotModelContract(runtime.modelContract);
-	return async (model, context, options) => {
-		const requestModel = contract ? structuredClone(model) : model;
-		const requestOptions = contract ? applyModelContract(contract, requestModel, options ?? {}) : options;
-		const requestContext = contract ? projectToolImagesForModel(context, requestModel).context : context;
+	return async (requestModel, requestContext, requestOptions) => {
 		requestOptions?.signal?.throwIfAborted();
 		const auth = await modelRegistry.getApiKeyAndHeaders(requestModel);
 		if (!auth.ok) throw new Error(auth.error);
