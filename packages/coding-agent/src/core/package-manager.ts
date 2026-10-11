@@ -1,5 +1,6 @@
 import type { ChildProcess, ChildProcessByStdio } from "node:child_process";
 import { createHash } from "node:crypto";
+import type { Dirent } from "node:fs";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 
@@ -316,11 +317,17 @@ function collectSkillEntries(
 
 	const root = rootDir ?? dir;
 	const ig = ignoreMatcher ?? ignore();
-	addIgnoreRules(ig, dir, root);
+	let dirEntries: Dirent[];
+	try {
+		dirEntries = readdirSync(dir, { withFileTypes: true });
+	} catch {
+		addIgnoreRules(ig, dir, root);
+		return entries;
+	}
+	// Find ignore files in the listing already in hand instead of 3 existsSync probes per dir (spec 055).
+	addIgnoreRules(ig, dir, root, dirEntries);
 
 	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
-
 		for (const entry of dirEntries) {
 			if (entry.name !== "SKILL.md") {
 				continue;

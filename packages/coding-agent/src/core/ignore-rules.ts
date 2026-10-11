@@ -38,13 +38,43 @@ function prefixIgnorePattern(line: string, prefix: string): string | null {
 	return negated ? `!${prefixed}` : prefixed;
 }
 
-export function addIgnoreRules(ig: IgnoreMatcher, dir: string, rootDir: string): void {
+/**
+ * Ignore-file names present in a `readdir` listing: `true` for an exact match,
+ * `false` when only a case variant (".GitIgnore") is listed. A case-insensitive
+ * filesystem resolves such a variant, so the caller still probes it.
+ */
+function listedIgnoreFiles(listing: readonly { name: string }[]): Map<string, boolean> {
+	const found = new Map<string, boolean>();
+	for (const { name } of listing) {
+		if (!name.startsWith(".")) continue;
+		const lower = name.toLowerCase();
+		if (!IGNORE_FILE_NAMES.includes(lower)) continue;
+		found.set(lower, found.get(lower) === true || name === lower);
+	}
+	return found;
+}
+
+/**
+ * Add the ignore-file rules of `dir`. With `listing` (the `readdir` result of
+ * `dir`), files absent from it are skipped without an `existsSync` probe; a
+ * listed name that is not a readable file fails `readFileSync` and is skipped,
+ * as a failed probe was before (spec 055).
+ */
+export function addIgnoreRules(
+	ig: IgnoreMatcher,
+	dir: string,
+	rootDir: string,
+	listing?: readonly { name: string }[],
+): void {
 	const relativeDir = relative(rootDir, dir);
 	const prefix = relativeDir ? `${toPosixPath(relativeDir)}/` : "";
+	const listed = listing ? listedIgnoreFiles(listing) : undefined;
 
 	for (const filename of IGNORE_FILE_NAMES) {
 		const ignorePath = join(dir, filename);
-		if (!existsSync(ignorePath)) continue;
+		const state = listed?.get(filename);
+		if (listed && state === undefined) continue;
+		if (state !== true && !existsSync(ignorePath)) continue;
 		try {
 			const content = readFileSync(ignorePath, "utf-8");
 			const patterns = content
