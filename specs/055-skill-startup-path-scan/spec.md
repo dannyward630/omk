@@ -7,7 +7,7 @@ description: "스킬이 많을 때 시작 비용 줄이기: 스킬 경로 realpa
 **Specification ID**: `055-skill-startup-path-scan`
 **Feature Branch**: `perf/skill-startup-055` (origin/main `f913f49`에서 분기)
 **Created**: 2026-10-11
-**Status**: 구현됨, 측정 전 (Perf Engineer)
+**Status**: 구현됨, 1,191개 40쌍 재측정 대기 (Perf Engineer)
 **Constitution**: [specs/constitution.md](../constitution.md)
 **Input**: Perf Engineer의 CPU 프로파일(`/workspace/omk-perf-skillprof-run/runs/20261011-132325-pr9ad9aa28/REPORT.md`, 저장소 밖). 범위는 Tech Lead가 정했다.
 
@@ -55,7 +55,23 @@ description: "스킬이 많을 때 시작 비용 줄이기: 스킬 경로 realpa
    - 새 fixture: 같은 스킬을 심볼릭 링크로 두 번 건 경우, 부모 디렉터리를 심볼릭 링크로 건 경우. 중복 제거 결과가 memo 없을 때(main 경로)와 같다.
    - ignore 파일 fixture: 무시된 스킬 디렉터리가 예전처럼 빠진다(`.gitignore`, `.ignore`, `.fdignore`, 대소문자 변형, 디렉터리 이름이 `.gitignore`인 경우, 깨진 링크).
 2. **mock 요청 바이트가 main과 같다.** 벤치에서 Perf가 확인한다(스킬 목록 순서와 경로가 같으면 같아야 한다).
-3. **성능** (Perf가 나중에 측정. 프로파일러 없이, 20쌍 교차, `OMK_TRUST_PROJECT=0`):
-   - 1,191개: 첫 요청까지 중앙값 −30 ms 이상, 95% CI 상한 ≤ 0.
-   - 번들 6개 `--noreg`: +5 ms 이내.
+3. **성능**: 프로파일러 없이, 짝지은 교차(ABBA), `OMK_TRUST_PROJECT=0`. 판정 규칙은 아래 "판정 / Verdict rules"를 따른다.
 4. 게이트: biome, `check-module-size`, `check-import-cycles`, `tsgo --noEmit`, 바꾼 파일의 vitest.
+
+## 판정 / Verdict rules (Tech Lead, 2026-10-11)
+
+측정 방법: 프로세스 시작부터 mock이 첫 요청을 받을 때까지의 벽시계 시간이다. 짝은 main `f913f49` 대 055다. d = 055 − main이고, 판정은 `/workspace/omk-bench-analyst/paired_verdict.py`로 낸다(짝 차이 중앙값, bootstrap 95% CI). 근거와 원자료는 `/workspace/omk-perf-055-results/RESULTS.md`(저장소 밖)다.
+
+- **1,191개**: 미리 정해 둔 **새 40쌍 측정**으로 판정한다. 이미 돈 두 20쌍 묶음을 사후에 합친 40쌍은 판정에 쓰지 않는다. 통과 조건은 짝 차이 중앙값 ≤ −30 ms **그리고** 95% CI 상한 ≤ 0이다. 측정은 박스 차례가 오면 한다.
+- **번들 6개**: "+5 ms 이내임을 증명"에서 **"뚜렷한 회귀 없음"**으로 바꾼다(spec 057과 같은 규칙). 회귀는 95% CI 하한 > 0 **그리고** 중앙값 ≥ +5 ms일 때이고, 그러면 막는다.
+  - 바꾼 이유: 이 박스에서 같은 코드끼리 잰 A/A(main 대 main, 20쌍)가 −3.3 ms, CI −24.5..+10.8로 나왔다. 잡음이 약 ±20 ms라서, 20쌍으로는 +5 ms 이내를 증명할 수 없다.
+
+### 지금까지의 결과 (2026-10-11 14:33–14:47 KST, head `21f9dc2`)
+
+| 세트 | n | 짝 차이 중앙값 | 95% CI | 판정 |
+|---|---:|---:|---:|---|
+| 1,191개, 처음 20쌍 | 20 | −47.3 ms | −73.9..+8.8 | **NOISE**: CI가 0을 넘는다. 미통과. 40쌍 재측정 대기 |
+| 번들 6개, 처음 20쌍 | 20 | −2.0 ms | −17.4..+24.4 | 새 규칙으로 **통과**(CI 하한 < 0, 중앙값 < +5). 옛 규칙(+5 ms 증명)으로는 미통과 |
+
+- 판정에 쓰지 않는 추가 묶음(기록용): 1,191개 두 번째 20쌍은 −46.5 ms(CI −82.5..−18.5)였고, 6개 두 번째 20쌍은 +8.5 ms(CI −5.2..+24.6)였다. 두 묶음 모두 처음 묶음 **뒤에** 돌렸고, 미리 정한 판정이 아니다.
+- 동작 동일성(AC 1)은 4세트 모두 main과 같았다. 요청 바이트(AC 2)도 같았다: 6개 `14247782…0d926f`, 1,191개 `1eaf6d55…473313`.
