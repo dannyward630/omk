@@ -26,14 +26,28 @@ interface SdkProviderRuntime {
  * Shared by the main agent and first-party summary calls using agent.streamFn.
  * Spec 033: wrapped with the opt-in per-response reasoning cap (`OMK_RESPONSE_REASONING_CAP=1`).
  * Spec 059: below the cap, one `llm-call.jsonl` line per provider request when `OMK_RUN_LOG_DIR` is set.
+ * Spec 037: outermost, the opt-in adaptive effort wrapper (`OMK_ADAPTIVE_EFFORT=1`).
  * The model contract is applied above the log, so the logged `effort`/`effortSent` are read from the
  * same model and options the provider is called with (#128 review).
  */
 export function createSdkProviderStream(runtime: SdkProviderRuntime): StreamFn {
-	return createResponseReasoningCapStreamFn(
+	const capped = createResponseReasoningCapStreamFn(
 		createModelContractStreamFn(createLlmCallRunLogStreamFn(createProviderStream(runtime)), runtime.modelContract),
 		resolveResponseReasoningCapConfig(),
 	);
+	return process.env.OMK_ADAPTIVE_EFFORT === "1" ? createLazyAdaptiveEffortStreamFn(capped) : capped;
+}
+
+/**
+ * Spec 037, outermost: `OMK_ADAPTIVE_EFFORT=1` (exactly "1") picks the effort per phase. The module
+ * is imported on the first call only, so with the flag off nothing is loaded and `capped` is returned.
+ */
+function createLazyAdaptiveEffortStreamFn(inner: StreamFn): StreamFn {
+	let adaptive: Promise<StreamFn> | undefined;
+	return async (model, context, options) => {
+		adaptive ??= import("./adaptive-effort.ts").then((module) => module.createAdaptiveEffortStreamFn(inner));
+		return (await adaptive)(model, context, options);
+	};
 }
 
 /** Without a contract the inner stream is returned itself; with one, every request is projected through it. */

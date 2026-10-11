@@ -12,7 +12,8 @@
  * the caller passes `OMK_TRUST_PROJECT` only when the parent trusted its project and
  * the worker cwd's gated items hash the same (`workerProjectTrustEnv`), or "0" when
  * the parent runs with it forced off. Workers inherit `OMK_SKILL_SEARCH` but never
- * get automatic skill candidate messages (spec 050 R7).
+ * get automatic skill candidate messages (spec 050 R7). Adaptive reasoning effort (spec 037) is
+ * always off in workers.
  */
 const LEAD_ONLY_VARS = [
 	"OMK_TIME_BUDGET_SEC",
@@ -31,6 +32,7 @@ export function subagentWorkerEnv(parent: NodeJS.ProcessEnv, projectTrust?: "1" 
 	env.OMK_DELIVERABLE_GUARD = "0";
 	// Spec 050 R7: workers keep OMK_SKILL_SEARCH (the `skill_search` tool) but get no automatic candidates.
 	env.OMK_SKILL_SEARCH_SUGGEST = "0";
+	env.OMK_ADAPTIVE_EFFORT = "0";
 	if (parent.OMK_RUN_LOG_DIR?.trim()) env.OMK_RUN_LOG_ROLE = "worker";
 	return env;
 }

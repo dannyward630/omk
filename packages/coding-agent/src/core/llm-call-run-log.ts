@@ -16,8 +16,9 @@
  * PRIVACY (spec 042): numbers, ids, sha256 hashes and enum names only. Never prompt text,
  * tool arguments, model output, paths, URLs, headers or error messages.
  *
- * `phase` and `phaseSource` are reserved for spec 037 (per-phase effort) and are always `null`
- * here, so a verdict script can read one schema before and after 037 lands.
+ * `phase` and `phaseSource` are `null` unless spec 037 (`OMK_ADAPTIVE_EFFORT=1`) fills them through
+ * `setLlmCallPhaseFields`, together with `effortGroup`, `effortSwitch` and `lowerClamped`. With the
+ * flag off the setter is never called, so the line is the same as before 037.
  *
  * COST: `costTotal` is omk's own `usage.cost.total`, which leaves out xAI reasoning tokens, so
  * verdicts use xAI `cost_in_usd_ticks` only. omk's usage parsers drop that raw field (see spec
@@ -36,6 +37,7 @@ import {
 	type Usage,
 } from "omk-ai";
 import { systemHash, toolsHash } from "omk-ai/prompt-hash";
+import type { EffortGroup, Phase, PhaseSource } from "./phase-classifier.ts";
 import { appendRunLog, RUN_LOG_DIR_ENV, type RunLogRecord } from "./run-log.ts";
 
 export const LLM_CALL_RUN_LOG = "llm-call";
@@ -56,6 +58,33 @@ let lastCallEndAt: number | undefined;
 /** Test hook: forget the previous call so the next one logs `gapMs: null`. */
 export function resetLlmCallRunLogClock(): void {
 	lastCallEndAt = undefined;
+}
+
+/** Spec 037 fields for the provider requests of the current outer call (enums and numbers only). */
+export interface LlmCallPhaseFields {
+	readonly phase: Phase | null;
+	readonly phaseSource: PhaseSource | null;
+	readonly effortGroup: EffortGroup;
+	readonly effortSwitch: { readonly from: EffortGroup; readonly to: EffortGroup; readonly n: number } | null;
+	readonly lowerClamped: boolean;
+}
+
+/**
+ * Set by spec 037 right before each outer call; `undefined` for calls it passes through.
+ * One value per process, like `lastCallEndAt`: overlapping calls may read each other's fields.
+ */
+let phaseFields: LlmCallPhaseFields | undefined;
+
+/** Spec 037 only, and only with `OMK_ADAPTIVE_EFFORT=1`: fields for the next provider request(s). */
+export function setLlmCallPhaseFields(fields: LlmCallPhaseFields | undefined): void {
+	phaseFields = fields;
+}
+
+/** A 033 retry inside the same outer call keeps the phase but does not repeat `effortSwitch`. */
+function takePhaseFields(): LlmCallPhaseFields | undefined {
+	const fields = phaseFields;
+	if (fields?.effortSwitch) phaseFields = { ...fields, effortSwitch: null };
+	return fields;
 }
 
 const count = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
@@ -99,6 +128,7 @@ export function createLlmCallRunLogStreamFn(inner: StreamFn, options: LlmCallRun
 	const wrapped: StreamFn = async (model, context, streamOptions) => {
 		const startedAt = now();
 		const gapMs = lastCallEndAt === undefined ? null : Math.max(0, startedAt - lastCallEndAt);
+		const fields = takePhaseFields();
 		let base: RunLogRecord;
 		try {
 			base = {
@@ -112,6 +142,7 @@ export function createLlmCallRunLogStreamFn(inner: StreamFn, options: LlmCallRun
 				phase: null,
 				phaseSource: null,
 				requestedAtMs: startedAt,
+				...fields,
 			};
 		} catch {
 			base = {
@@ -120,6 +151,7 @@ export function createLlmCallRunLogStreamFn(inner: StreamFn, options: LlmCallRun
 				phase: null,
 				phaseSource: null,
 				requestedAtMs: startedAt,
+				...fields,
 			};
 		}
 		let logged = false;

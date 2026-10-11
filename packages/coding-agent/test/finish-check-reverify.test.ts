@@ -49,6 +49,11 @@ describe("finish-check reverify: flag", () => {
 		expect(env.OMK_TIME_BUDGET_SEC).toBeUndefined();
 		expect(env.OMK_FINISH_CHECK).toBe("1");
 	});
+
+	it("turns adaptive reasoning effort (spec 037) off in subagent workers", () => {
+		expect(subagentWorkerEnv({ OMK_ADAPTIVE_EFFORT: "1" }).OMK_ADAPTIVE_EFFORT).toBe("0");
+		expect(subagentWorkerEnv({}).OMK_ADAPTIVE_EFFORT).toBe("0");
+	});
 });
 
 describe("finish-check reverify: trigger", () => {
