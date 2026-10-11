@@ -1,5 +1,13 @@
 import type { CompactionControlState } from "./compaction/control-state.ts";
-import { EMPTY_TODO_STATE, type TodoState } from "./todo-state.ts";
+import {
+	EMPTY_TODO_STATE,
+	nextActiveTodo,
+	TODO_DIFFICULTIES,
+	TODO_KINDS,
+	type TodoDifficulty,
+	type TodoKind,
+	type TodoState,
+} from "./todo-state.ts";
 
 let currentTodoState: TodoState = EMPTY_TODO_STATE;
 
@@ -13,6 +21,21 @@ export function setCurrentTodoState(state: TodoState): void {
 
 export function resetCurrentTodoState(): void {
 	currentTodoState = EMPTY_TODO_STATE;
+}
+
+/**
+ * Kind of the todo the run is on now (spec 049 R3): `nextActiveTodo`'s item, `undefined` when there is
+ * none or its kind is unknown. Read-only; this and `activeTodoDifficulty` are spec 037's only inputs from todos.
+ */
+export function activeTodoKind(): TodoKind | undefined {
+	const kind = nextActiveTodo(currentTodoState)?.kind;
+	return kind !== undefined && TODO_KINDS.includes(kind) ? kind : undefined;
+}
+
+/** The model's difficulty estimate for the same item as `activeTodoKind`; `undefined` when not given. */
+export function activeTodoDifficulty(): TodoDifficulty | undefined {
+	const difficulty = nextActiveTodo(currentTodoState)?.difficulty;
+	return difficulty !== undefined && TODO_DIFFICULTIES.includes(difficulty) ? difficulty : undefined;
 }
 
 /**

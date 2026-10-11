@@ -7,12 +7,39 @@
 
 export type TodoStatus = "pending" | "active" | "done" | "blocked";
 
+/** What a todo item does (spec 049). Spec 037 widens this with its own `build`/`run` phases. */
+export type TodoKind = "plan" | "explore" | "edit" | "debug" | "verify";
+export const TODO_KINDS: readonly TodoKind[] = ["plan", "explore", "edit", "debug", "verify"];
+
+/** The model's own estimate of a todo item's difficulty (spec 049); an input for spec 037 only. */
+export type TodoDifficulty = "low" | "medium" | "high";
+export const TODO_DIFFICULTIES: readonly TodoDifficulty[] = ["low", "medium", "high"];
+
+/** How a todo item shows it is done (spec 049): a file the host checks, or a command the model runs. */
+export type TodoCheck =
+	| { readonly type: "file"; readonly path: string; readonly minBytes?: number; readonly contains?: string }
+	| { readonly type: "command"; readonly command: string; readonly expect?: string };
+
 export interface TodoItem {
 	id: string;
 	label: string;
 	status: TodoStatus;
 	/** Optional human-readable detail appended after the label. */
 	detail?: string;
+	/** Spec 049, only with `OMK_TODO_VERIFY` on. Missing means `unknown`. */
+	kind?: TodoKind;
+	/** Spec 049, only with `OMK_TODO_VERIFY` on. */
+	difficulty?: TodoDifficulty;
+	/** Spec 049, only with `OMK_TODO_VERIFY` on. */
+	check?: TodoCheck;
+}
+
+/**
+ * `OMK_TODO_VERIFY` (spec 049): typed todos checked by the finish check. Off unless set to
+ * `1/true/on/enable/enabled` (any case), like the other opt-in finish-check switches.
+ */
+export function resolveTodoVerify(value: string | undefined): boolean {
+	return ["1", "true", "on", "enable", "enabled"].includes(value?.trim().toLowerCase() ?? "");
 }
 
 export interface TodoState {
