@@ -15,8 +15,6 @@ import {
 	shouldAddFinishDiscipline,
 } from "../../finish-check.ts";
 import {
-	buildFinishCheckContinueMessage,
-	buildFinishCheckMessage,
 	extractRequirements,
 	extraTurnItems,
 	type FinishCheckLedgerItem,
@@ -34,6 +32,7 @@ import {
 	type FinishCheckBudgetReader,
 } from "./finish-check-reverify-stage.ts";
 import { createFinishCheckRunLogger, type FinishCheckRunLogOptions } from "./finish-check-run-log.ts";
+import { createFinishCheckTodo } from "./finish-check-todo.ts";
 
 export interface FinishCheckOptions extends FinishCheckRunLogOptions {
 	readonly env?: NodeJS.ProcessEnv;
@@ -95,6 +94,8 @@ export default function finishCheck(omk: ExtensionAPI, options: FinishCheckOptio
 	// Spec 032 decision 10: write a held no-check-turn line synchronously, before any other handler awaits.
 	// Only with the verifier on, so flag-off runs register exactly main's handlers.
 	if (stage) omk.on("session_shutdown", () => runLog.flush());
+	// Spec 049: todo checks join the check turn only with OMK_TODO_VERIFY on; off, this is main's message builders.
+	const todo = createFinishCheckTodo(omk, env);
 	let task = "";
 	let firstSettleFraction: number | undefined;
 	let checkLedger: FinishCheckLedgerItem[] = [];
@@ -144,7 +145,7 @@ export default function finishCheck(omk: ExtensionAPI, options: FinishCheckOptio
 		// Once the verifier ran, the cap also stops at the end of the check turn (the verifier has its own).
 		if ((extraTurnEnabled || stage?.started ? checkActive : checked) && !wrappedUp) {
 			checkToolCalls += 1;
-			if (checkToolCalls >= finishCheckToolCap(requirements.length)) {
+			if (checkToolCalls >= finishCheckToolCap(requirements.length + todo.commandCount)) {
 				wrappedUp = true;
 				omk.sendUserMessage(FINISH_CHECK_WRAP_UP_MESSAGE, { deliverAs: "steer" });
 			}
@@ -214,6 +215,7 @@ export default function finishCheck(omk: ExtensionAPI, options: FinishCheckOptio
 				requirements.length > 0 ? parseFinishCheckLedger(ledgerReply(event.messages), requirements) : [];
 			if (ledger.length > 0) omk.appendEntry(FINISH_CHECK_LEDGER_ENTRY, { items: ledger });
 			const { failing, unmeasured } = extraTurnItems(ledger);
+			const todoFailing = todo.finish(event.messages, ctx.cwd);
 			const skip =
 				stage &&
 				reverifySkipReason({
@@ -237,7 +239,7 @@ export default function finishCheck(omk: ExtensionAPI, options: FinishCheckOptio
 				extraTurnEnabled &&
 				decideExtraTurn({
 					extraTurnsUsed,
-					failing: failing.length,
+					failing: failing.length + todoFailing,
 					unmeasured: unmeasured.length,
 					aborted,
 					hasPendingMessages: ctx.hasPendingMessages(),
@@ -252,7 +254,7 @@ export default function finishCheck(omk: ExtensionAPI, options: FinishCheckOptio
 			extraTurnActive = true;
 			const extraTurnIds = [...failing, ...unmeasured].map((item) => item.id);
 			omk.events.emit(FINISH_CHECK_EVENT, { active: false, ledger, extraTurn, extraTurnIds });
-			omk.sendUserMessage(buildFinishCheckContinueMessage(ledger), { deliverAs: "followUp" });
+			omk.sendUserMessage(todo.continueMessage(ledger), { deliverAs: "followUp" });
 			return;
 		}
 		const skip = finishCheckSkipReason({
@@ -281,6 +283,6 @@ export default function finishCheck(omk: ExtensionAPI, options: FinishCheckOptio
 		}
 		checkActive = true;
 		omk.events.emit(FINISH_CHECK_EVENT, { active: true, requirements: [...requirements] });
-		omk.sendUserMessage(buildFinishCheckMessage(requirements), { deliverAs: "followUp" });
+		omk.sendUserMessage(todo.message(requirements), { deliverAs: "followUp" });
 	});
 }
