@@ -133,3 +133,20 @@ finish-check의 check turn은 지금처럼 settle 때 한 번 열린다(조건·
 - `packages/coding-agent/examples/extensions/subagent/worker-env.ts`: `OMK_TODO_VERIFY=0`
 - `packages/coding-agent/docs/environment-variables.md`
 - Tests: `test/todo-verify.test.ts`(AC 2–7, 9), `test/todo-verify-extension.test.ts`(AC 1, 3, 8), `test/todo-verify-flag-off-cold-path.test.ts`(AC 1, 10)
+
+## 구현 결정 (구현 PR, OMK, 2026-10-11)
+
+spec이 열어 둔 부분은 아래처럼 보수적인 쪽으로 정했다. 리뷰에서 바꿀 수 있다.
+
+1. **host 파일 확인 시점**: check turn이 **끝날 때**(settle) 돌린다. R2-1의 "먼저"는 "모델 응답보다 host 결과가 우선"으로 읽었다. check turn 동안 모델이 고친 결과까지 보고 판정하므로, 이미 고쳐진 파일 때문에 extra turn을 쓰는 일이 없다.
+2. **`active` 항목**: `pending`/`blocked`처럼 확인하지 않는다. `done`만 확인한다. `notDone`은 목록에서 `done`이 아닌 항목 전체의 수다.
+3. **8개 상한**: 상태와 상관없이 목록 순서로 확인이 붙은 앞 8개가 대상이고, 그중 `done`만 확인한다.
+4. **`TODO n` 번호**: 확인하는 `done` 항목마다 목록 순서로 번호를 붙인다. check 메시지에는 command 확인만 나오므로 번호가 건너뛸 수 있다. file 확인 번호는 extra turn 메시지에만 나온다.
+5. **command 확인(정해 주실 것 2)**: host는 실행하지 않는다(spec 제안 그대로).
+6. **spec 032 verifier가 켜진 경우**: todo 결과는 기록하지만 032 fix turn의 실패 항목에는 합치지 않는다(`mergeFailingItems`는 바꾸지 않음). 035 extra turn 경로에서만 합친다.
+7. **잘못된 `check`**: 도구 오류 없이 버리고 "without check"로 센다. `minBytes`가 양수가 아니면 버린다. `expect: "exit0"`은 기본값이라 저장하지 않는다.
+8. **모듈 로드**: 플래그가 켜져 있으면 `update_todo`는 로드 때 `todo-verify.ts`를 기다려서 불러온다. finish-check는 로드 때 비동기로 불러오고, check turn까지 로드가 안 끝났거나 실패하면 그 check는 main과 같이 동작한다.
+9. **extra turn(round 2)의 `TODO` 줄**: 파싱하지 않는다. REQ와 같이 그 뒤에는 아무것도 하지 않는다.
+10. **037 입구**: R3의 `activeTodoKind(): TodoKind | undefined`에 더해 `activeTodoDifficulty(): TodoDifficulty | undefined`를 같은 기준(`nextActiveTodo`)으로 둔다. 둘 다 순수 읽기이고 `todo-runtime-state.ts`에 있다.
+11. **꺼짐에서 모델이 스키마에 없는 `kind`를 보내면**: main처럼 항목에 그대로 복사된다(main 동작 유지). 그래서 꺼짐에서도 `activeTodoKind()`가 값을 돌려줄 수 있다. 꺼짐 세션에서 이 값을 쓸지는 037이 정한다.
+12. **cold-path 테스트**: `todo-verify-flag-off-cold-path.test.ts`는 `main()` 전체가 아니라 두 내장 확장을 직접 돌려서 확인한다. Perf 측정(+10 ms, +5 MiB)은 이 PR에서 하지 않았다.
