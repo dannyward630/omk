@@ -1,10 +1,11 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createActiveSkillState } from "../src/core/active-skill-state.ts";
 import type { ToolDefinition } from "../src/core/extensions/types.ts";
 import {
+	explicitSkillNames,
 	PROMPT_SKILLS_CUSTOM_TYPE,
 	PROMPT_SKILLS_RELEVANT_LIMIT,
 	PromptSkillFreeze,
@@ -276,5 +277,71 @@ describe("PromptSkillFreeze skill-search setup (spec 050 R1/R2, #122 review)", (
 		const turn = await freeze.turn(input({ env: ON }));
 		expect(turn.messages).toEqual([]);
 		expect(reads).toBeGreaterThan(1);
+	});
+
+	it("turns off with tool_inactive when the active tools leave skill_search out (058 follow-up)", async () => {
+		const freeze = new PromptSkillFreeze();
+		freeze.skillSearch.setup({ skills: () => many, hasReadTool: true, env: ON });
+		freeze.skillSearch.syncActiveTools(["read", "skill_search"]);
+		expect(freeze.skillSearch.active).toBe(true);
+		freeze.skillSearch.syncActiveTools(["read", "bash"]);
+		expect(freeze.skillSearch.active).toBe(false);
+		// Final for the session: no candidate message, and the next registry build no longer adds the tool.
+		freeze.skillSearch.syncActiveTools(["read", "skill_search"]);
+		expect(freeze.skillSearch.active).toBe(false);
+		expect((await freeze.turn(input({ env: ON }))).messages).toEqual([]);
+		expect(freeze.skillSearch.withTool([], []).map((tool) => tool.name)).toEqual([]);
+		const logDir = mkdtempSync(join(tmpdir(), "omk-prompt-skills-"));
+		dirs.push(logDir);
+		const logged = new PromptSkillFreeze();
+		logged.skillSearch.setup({ skills: () => many, hasReadTool: true, env: { ...ON, OMK_RUN_LOG_DIR: logDir } });
+		logged.skillSearch.syncActiveTools(["read"]);
+		await logged.skillSearch.logSession({ systemPrompt: "s", tools: [] });
+		expect(readFileSync(join(logDir, "skill-select.jsonl"), "utf8")).toContain('"inactiveReason":"tool_inactive"');
+	});
+
+	it("never fails on a run-log error: hashing or the prompt-hash import throws, flag on and off", async () => {
+		for (const env of [{}, ON]) {
+			const logDir = mkdtempSync(join(tmpdir(), "omk-prompt-skills-"));
+			dirs.push(logDir);
+			const throwing = {
+				systemPrompt: "s",
+				get tools(): never {
+					throw new Error("hash failed");
+				},
+			};
+			const hashFails = new PromptSkillFreeze();
+			hashFails.skillSearch.setup({
+				skills: () => many,
+				hasReadTool: true,
+				env: { ...env, OMK_RUN_LOG_DIR: logDir },
+			});
+			await expect(hashFails.skillSearch.logSession(throwing)).resolves.toBeUndefined();
+			vi.doMock("omk-ai/prompt-hash", () => {
+				throw new Error("import failed");
+			});
+			try {
+				const importFails = new PromptSkillFreeze();
+				importFails.skillSearch.setup({
+					skills: () => many,
+					hasReadTool: true,
+					env: { ...env, OMK_RUN_LOG_DIR: logDir },
+				});
+				await expect(importFails.skillSearch.logSession({ systemPrompt: "s", tools: [] })).resolves.toBeUndefined();
+			} finally {
+				vi.doUnmock("omk-ai/prompt-hash");
+			}
+		}
+	});
+});
+
+describe("explicit skills for metacon (spec 058 R4)", () => {
+	it("passes only !skill and /skill: names, not defaultActiveSkills", () => {
+		const selection = createActiveSkillState(["house-style", "programming"], ["pdf-forms", "programming"], "bang");
+		expect(explicitSkillNames({ selection, defaults: ["house-style", "programming"] })).toEqual(["pdf-forms"]);
+		const defaultsOnly = createActiveSkillState(["house-style"], [], undefined);
+		expect(explicitSkillNames({ selection: defaultsOnly, defaults: ["house-style"] })).toEqual([]);
+		const bangOnly = createActiveSkillState([], ["pdf-forms"], "bang");
+		expect(explicitSkillNames({ selection: bangOnly, defaults: [] })).toEqual(["pdf-forms"]);
 	});
 });

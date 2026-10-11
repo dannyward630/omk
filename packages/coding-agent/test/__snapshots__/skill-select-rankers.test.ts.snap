@@ -1,0 +1,71 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`fixed fixture: 40 skills, 5 queries (spec 058 AC 2) > bm25 and metacon top 3 match the recorded golden output 1`] = `
+[
+  {
+    "bm25": [
+      "csv-clean 4.259",
+      "csv-validate 4.259",
+      "csv-merge 4.195",
+    ],
+    "id": "q1",
+    "metacon": [
+      "csv-merge metacon",
+      "chart-render metacon",
+      "csv-clean bm25-fill",
+    ],
+  },
+  {
+    "bm25": [
+      "pdf-redact 8.756",
+      "pdf-forms 7.863",
+      "git-bisect 2.968",
+    ],
+    "id": "q2",
+    "metacon": [
+      "pdf-redact metacon",
+      "pdf-forms metacon",
+      "git-bisect bm25-fill",
+    ],
+  },
+  {
+    "bm25": [
+      "kubernetes-deploy 11.763",
+      "docker-build 6.785",
+      "pptx-build 3.643",
+    ],
+    "id": "q3",
+    "metacon": [
+      "kubernetes-deploy metacon",
+      "docker-build metacon",
+      "pptx-build bm25-fill",
+    ],
+  },
+  {
+    "bm25": [
+      "sql-tuning 7.426",
+      "postgres-migrate 4.898",
+      "git-bisect 2.968",
+    ],
+    "id": "q4",
+    "metacon": [
+      "sql-tuning metacon",
+      "postgres-migrate metacon",
+      "git-bisect bm25-fill",
+    ],
+  },
+  {
+    "bm25": [
+      "flaky-tests 10.068",
+      "unit-tests 8.240",
+      "css-layout 2.246",
+    ],
+    "id": "q5",
+    "metacon": [
+      "flaky-tests metacon",
+      "unit-tests metacon",
+      "css-layout bm25-fill",
+    ],
+  },
+]
+`;

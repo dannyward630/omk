@@ -129,6 +129,15 @@ With many skills the `<available_skills>` list grows the system prompt by every 
 - If another tool (an extension, MCP server or SDK tool) is already named `skill_search`, the session keeps the normal skill list and prints one warning; without the flag such a tool never changes the prompt.
 - With `OMK_RUN_LOG_DIR` set, `skill-select.jsonl` records session, index, search and suggest events with hashes and counts only, never the query, skill names or paths.
 
+#### Ranking mode (`OMK_SKILL_SELECT`)
+
+`OMK_SKILL_SELECT=bm25|metacon` (experimental, default unset = off) picks how search mode ranks skills; it turns search mode on the same way and wins over `OMK_SKILL_SEARCH`, which stays an alias of `bm25`. The mode is fixed at session start and only changes which skills `skill_search` and the task-start candidates return, never the system prompt or tools.
+
+- `bm25`: the BM25 order above.
+- `metacon`: narrows to the BM25 top 64, then picks a set of skills that together cover the words of the query (local capability-coverage planning, no model or network call). Remaining slots are filled in BM25 order. Each result is marked `metacon` or `bm25-fill` in the tool details and the run log.
+- In both modes, skills whose SKILL.md content is byte-identical (same content hash) appear once.
+- Any other value (including `wpl`) leaves skill search off and prints one warning.
+
 With 24 skills or fewer, without `read`, or with the flag off, prompts are unchanged.
 
 ## Skill Commands

@@ -75,7 +75,7 @@ export class PromptSkillFreeze {
 	/** R3 task start: the R6 plan plus, in an active session, one candidate message (not in workers, R7). */
 	async turn(input: PromptSkillTurnInput): Promise<PromptSkillTurn> {
 		const plan = this.planTurn(input);
-		const candidates = await this.skillSearch.candidates(input.budgetQuery, input.env);
+		const candidates = await this.skillSearch.candidates(input.budgetQuery, input.env, explicitSkillNames(input));
 		return candidates ? { ...plan, messages: [...plan.messages, candidates] } : plan;
 	}
 
@@ -170,6 +170,15 @@ function relevantSkills(skills: readonly Skill[], query: string, activeNames: re
 function resolveSkills(skills: readonly Skill[], names: readonly string[]): Skill[] {
 	const byName = new Map(skills.map((skill) => [skill.name, skill]));
 	return names.map((name) => byName.get(name)).filter((skill): skill is Skill => skill !== undefined);
+}
+
+/**
+ * 058 R4 `explicitSkills`: this prompt's `!skill` / `/skill:` names, that is the selection without the
+ * operator's `defaultActiveSkills` (a default that is also named explicitly counts as a default).
+ */
+export function explicitSkillNames(input: Pick<PromptSkillTurnInput, "selection" | "defaults">): string[] {
+	const defaults = new Set(input.defaults);
+	return input.selection.names.filter((name) => !defaults.has(name));
 }
 
 /**

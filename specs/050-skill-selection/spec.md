@@ -112,7 +112,7 @@ R6은 `OMK_SKILL_SEARCH`와 상관없이 적용한다. 아래 세 경로는 모�
 - `type: "suggest"`: `trigger`(`task|todo`), `todoKind`(enum 또는 `none`), `k`, `skillHashes[]`, `topScore`(소수 셋째 자리), `belowFloor`(bool), `ms`.
 - `type: "search"`: `queryTokens`, `limit`, `returned`, `skillHashes[]`, `ms`.
 - `type: "read"`: 모델이 `read`로 연 파일이 스킬 경로일 때 `skillHash`, `suggested`(bool, 이 세션에서 후보로 보여 준 스킬인지), `via`(`suggest|search|none`).
-- `type: "session"`(세션 시작 때 한 번): `active`(bool), `inactiveReason`(`flag_off|few_skills|no_read_tool|none`), `systemHash`, `toolsHash`. 해시는 main에 있는 `omk-ai/prompt-hash` helper(#117)로 계산한다.
+- `type: "session"`(세션 시작 때 한 번): `active`(bool), `inactiveReason`(`flag_off|few_skills|no_read_tool|name_conflict|tool_inactive|none`; `name_conflict`는 R2 이름 충돌, `tool_inactive`는 허용 목록·로드아웃·`setActiveTools`가 `skill_search`를 활성 도구에서 뺀 경우, spec 058), `systemHash`, `toolsHash`. 해시는 main에 있는 `omk-ai/prompt-hash` helper(#117)로 계산한다.
 - `type: "harness-move"`(R6 메시지를 붙일 때): `source`(`grok-harness|devin-harness|context-budget`), `k`, `skillHashes[]`.
 - `t`, `elapsedFraction`, `pid`, `role`은 `appendRunLog`가 붙인다.
 

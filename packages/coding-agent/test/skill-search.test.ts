@@ -16,6 +16,7 @@ import {
 	skillSearchActivation,
 	skillSearchFlagOn,
 	skillSearchSuggestOn,
+	skillSelectMode,
 } from "../src/core/skill-search-mode.ts";
 import type { Skill } from "../src/core/skills.ts";
 import { createSkillSearchToolDefinition } from "../src/core/tools/skill-search-tool.ts";
@@ -56,9 +57,14 @@ const NAMED: [string, string][] = [
 	["secret-pdf", "PDF redaction that only runs when asked explicitly."],
 ];
 
-function session(root: string, skills: Skill[], logDir?: string) {
+function session(
+	root: string,
+	skills: Skill[],
+	logDir?: string,
+	extra: { mode?: "bm25" | "metacon"; phase?: () => string | undefined } = {},
+) {
 	const env: NodeJS.ProcessEnv = logDir ? { OMK_RUN_LOG_DIR: logDir } : {};
-	return new SkillSearchSession({ skills: () => skills, agentDir: join(root, "agent"), env });
+	return new SkillSearchSession({ skills: () => skills, agentDir: join(root, "agent"), env, ...extra });
 }
 
 afterEach(() => {
@@ -82,12 +88,64 @@ describe("skill-search mode (spec 050 R1)", () => {
 
 	it("is active only above 24 model-invocable skills with a read tool", () => {
 		const on = { OMK_SKILL_SEARCH: "on" };
-		expect(skillSearchActivation({}, skills(30), true)).toEqual({ active: false, inactiveReason: "flag_off" });
-		expect(skillSearchActivation(on, skills(24), true)).toEqual({ active: false, inactiveReason: "few_skills" });
+		expect(skillSearchActivation({}, skills(30), true)).toEqual({
+			active: false,
+			inactiveReason: "flag_off",
+			mode: "off",
+		});
+		expect(skillSearchActivation(on, skills(24), true)).toEqual({
+			active: false,
+			inactiveReason: "few_skills",
+			mode: "bm25",
+		});
 		const hidden = [...skills(24), { name: "x", disableModelInvocation: true } as Skill];
 		expect(skillSearchActivation(on, hidden, true).inactiveReason).toBe("few_skills");
-		expect(skillSearchActivation(on, skills(25), false)).toEqual({ active: false, inactiveReason: "no_read_tool" });
-		expect(skillSearchActivation(on, skills(25), true)).toEqual({ active: true, inactiveReason: "none" });
+		expect(skillSearchActivation(on, skills(25), false)).toEqual({
+			active: false,
+			inactiveReason: "no_read_tool",
+			mode: "bm25",
+		});
+		expect(skillSearchActivation(on, skills(25), true)).toEqual({
+			active: true,
+			inactiveReason: "none",
+			mode: "bm25",
+		});
+	});
+
+	it("reads OMK_SKILL_SELECT=bm25|metacon, which wins over the OMK_SKILL_SEARCH alias (spec 058 R1)", () => {
+		expect(skillSelectMode({})).toEqual({ mode: "off", invalid: false });
+		expect(skillSelectMode({ OMK_SKILL_SEARCH: "1" })).toEqual({ mode: "bm25", invalid: false });
+		expect(skillSelectMode({ OMK_SKILL_SELECT: " MetaCon " })).toEqual({ mode: "metacon", invalid: false });
+		expect(skillSelectMode({ OMK_SKILL_SELECT: "bm25", OMK_SKILL_SEARCH: "0" })).toEqual({
+			mode: "bm25",
+			invalid: false,
+		});
+		expect(skillSelectMode({ OMK_SKILL_SELECT: "metacon", OMK_SKILL_SEARCH: "1" }).mode).toBe("metacon");
+		expect(skillSelectMode({ OMK_SKILL_SELECT: "", OMK_SKILL_SEARCH: "1" }).mode).toBe("bm25");
+		for (const value of ["wpl", "on", "1", "bm25,metacon"]) {
+			expect(skillSelectMode({ OMK_SKILL_SELECT: value, OMK_SKILL_SEARCH: "1" })).toEqual({
+				mode: "off",
+				invalid: true,
+			});
+		}
+	});
+
+	it("treats an unknown OMK_SKILL_SELECT value (wpl too) as off and warns, never as another mode", () => {
+		const warnings: string[] = [];
+		const warn = (env: NodeJS.ProcessEnv) => warnings.push(String(env.OMK_SKILL_SELECT));
+		expect(skillSearchActivation({ OMK_SKILL_SELECT: "wpl" }, skills(30), true, warn)).toEqual({
+			active: false,
+			inactiveReason: "flag_off",
+			mode: "off",
+			invalidMode: true,
+		});
+		expect(warnings).toEqual(["wpl"]);
+		expect(skillSearchActivation({ OMK_SKILL_SELECT: "metacon" }, skills(25), true, warn)).toEqual({
+			active: true,
+			inactiveReason: "none",
+			mode: "metacon",
+		});
+		expect(warnings).toHaveLength(1);
 	});
 
 	it("has a fixed tool schema: query (<=512 chars) and limit 1..8", () => {
@@ -220,6 +278,73 @@ describe("SkillSearchSession (spec 050 R2–R5)", () => {
 			skillHashes: [shortHash(`${marker}-skill`)],
 		});
 		expect(records[2]).toMatchObject({ trigger: "task", todoKind: "none", k: 1, belowFloor: false });
+	});
+});
+
+describe("SkillSearchSession modes (spec 058 R2–R7)", () => {
+	it("tags the tool details with the mode and each candidate's source", () => {
+		const root = tempDir();
+		const skills = writeSkills(root, [...NAMED, ...filler(30)]);
+		const bm25 = session(root, skills).search("pdf forms", 3).details;
+		expect(bm25.mode).toBe("bm25");
+		expect(bm25.candidates.every((candidate) => candidate.source === "bm25")).toBe(true);
+		const metacon = session(root, skills, undefined, { mode: "metacon" }).search("pdf forms kubernetes", 3).details;
+		expect(metacon.mode).toBe("metacon");
+		expect(metacon.candidates.map((candidate) => candidate.name)).toContain("kubernetes-deploy");
+		for (const candidate of metacon.candidates) expect(["metacon", "bm25-fill"]).toContain(candidate.source);
+	});
+
+	it("merges skills with the same loadSkills contentHash (R2)", () => {
+		const root = tempDir();
+		const skills = writeSkills(root, [
+			["pdf-forms", "Fill PDF forms."],
+			["pdf-forms-copy", "Fill PDF forms."],
+			...filler(30),
+		]).map((skill) => (skill.name.startsWith("pdf-forms") ? { ...skill, contentHash: "same" } : skill));
+		const names = session(root, skills)
+			.search("pdf forms", 5)
+			.details.candidates.map((candidate) => candidate.name);
+		expect(names).toEqual(["pdf-forms"]);
+	});
+
+	it("logs mode, candidate count, hashed top-k with scores and sources, latency and plan stats (R7)", () => {
+		const root = tempDir();
+		const logDir = tempDir();
+		const marker = "zebracornmarker";
+		const skills = writeSkills(root, [
+			[`${marker}-skill`, `Handles ${marker} tasks.`],
+			[`${marker}-helper`, `More ${marker} help.`],
+			...filler(30),
+		]);
+		const search = session(root, skills, logDir, { mode: "metacon", phase: () => "debug" });
+		search.search(`find ${marker} please`, 2);
+		search.suggest(`do the ${marker} task`);
+		const text = readFileSync(join(logDir, "skill-select.jsonl"), "utf8");
+		expect(text).not.toContain(marker);
+		expect(text).not.toContain(root);
+		const [, searched, suggested] = readLog(logDir);
+		for (const record of [searched, suggested]) {
+			expect(record).toMatchObject({ mode: "metacon", phase: "debug", phaseSource: "todo" });
+			expect(typeof record.candidateCount).toBe("number");
+			expect(typeof record.latencyMs).toBe("number");
+			expect(typeof record.planMs).toBe("number");
+			expect(typeof record.prefilter).toBe("number");
+		}
+		const top = searched.top as { nameHash: string; score: number; source: string }[];
+		expect(top).toHaveLength(2);
+		expect(top[0].source).toBe("metacon");
+		expect(top[1].source).toBe("bm25-fill");
+		expect(top.map((entry) => entry.nameHash)).toEqual(
+			expect.arrayContaining([shortHash(`${marker}-skill`), shortHash(`${marker}-helper`)]),
+		);
+	});
+
+	it("uses the task phase when no todo kind is wired (049 not on main)", () => {
+		const root = tempDir();
+		const logDir = tempDir();
+		const skills = writeSkills(root, [...NAMED, ...filler(30)]);
+		session(root, skills, logDir, { mode: "metacon" }).search("pdf", 3);
+		expect(readLog(logDir)[1]).toMatchObject({ phase: "task", phaseSource: "default" });
 	});
 });
 

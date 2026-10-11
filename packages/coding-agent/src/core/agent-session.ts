@@ -2076,6 +2076,7 @@ export class AgentSession {
 	}
 
 	private _rebuildSystemPrompt(toolNames: string[], model: Model<any> | undefined = this.model): string {
+		this._promptSkillFreeze.skillSearch.syncActiveTools(toolNames);
 		const defaultActiveSkills = this._getDefaultActiveSkills();
 		const assembled = promptAssembly.assembleSessionSystemPrompt({
 			cwd: this._cwd,

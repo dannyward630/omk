@@ -1,6 +1,6 @@
 /**
- * Spec 050 R1/R2/R3/R8: the per-session skill-search decision and its fixed tool, split from
- * `prompt-skill-message.ts` (module size). On the startup path, so it stays small: the index, BM25 and the
+ * Spec 050 R1/R2/R3/R8 and 058 R1/R7: the per-session skill-search decision (mode included) and its
+ * fixed tool, split from `prompt-skill-message.ts` (module size). On the startup path, so it stays small: the index, BM25 and the
  * search/suggest run-log records live in `skill-search.ts`, imported on the first search or candidate
  * computation only (R5).
  */
@@ -14,8 +14,8 @@ import {
 	SKILL_SEARCH_TOOL_NAME,
 	type SkillSearchActivation,
 	skillSearchActivation,
-	skillSearchFlagOn,
 	skillSearchSuggestOn,
+	skillSelectMode,
 } from "./skill-search-mode.ts";
 import type { Skill } from "./skills.ts";
 import { createSkillSearchToolDefinition } from "./tools/skill-search-tool.ts";
@@ -29,7 +29,7 @@ export interface SkillSearchSetup {
 }
 
 export class SkillSearchGate {
-	private activation: SkillSearchActivation = { active: false, inactiveReason: "flag_off" };
+	private activation: SkillSearchActivation = { active: false, inactiveReason: "flag_off", mode: "off" };
 	private options: SkillSearchSetup | undefined;
 	private session: Promise<SkillSearchSession> | undefined;
 	private tool: ToolDefinition | undefined;
@@ -40,13 +40,15 @@ export class SkillSearchGate {
 		return this.activation.active;
 	}
 
-	/** R1, at session start: decide once. The flag is checked first, so flag off never reads the skill list. */
+	/**
+	 * R1, at session start: decide once. The mode is read first, so skill search off (or an unknown
+	 * `OMK_SKILL_SELECT`, which warns) never reads the skill list.
+	 */
 	setup(options: SkillSearchSetup): void {
 		this.options = options;
 		const env = options.env ?? process.env;
-		this.activation = skillSearchFlagOn(env)
-			? skillSearchActivation(env, options.skills(), options.hasReadTool)
-			: { active: false, inactiveReason: "flag_off" };
+		const skills = skillSelectMode(env).mode === "off" ? [] : options.skills();
+		this.activation = skillSearchActivation(env, skills, options.hasReadTool);
 	}
 
 	/**
@@ -62,7 +64,7 @@ export class SkillSearchGate {
 	): ToolDefinition[] {
 		if (!this.activation.active) return [...tools];
 		if (otherNames.includes(SKILL_SEARCH_TOOL_NAME) || tools.some((tool) => tool.name === SKILL_SEARCH_TOOL_NAME)) {
-			this.activation = { active: false, inactiveReason: "name_conflict" };
+			this.activation = { active: false, inactiveReason: "name_conflict", mode: "off" };
 			warn(`skill search: another tool is already named ${SKILL_SEARCH_TOOL_NAME}; it stays off for this session.`);
 			return [...tools];
 		}
@@ -70,31 +72,57 @@ export class SkillSearchGate {
 		return [...tools, this.tool];
 	}
 
-	/** R3 task start: one candidate message, or none (off, worker, nothing above the floor, or any failure). */
-	async candidates(query: string, env: NodeJS.ProcessEnv = process.env): Promise<CustomMessage | undefined> {
+	/**
+	 * R3 task start: one candidate message, or none (off, worker, nothing above the floor, or any failure).
+	 * `explicit` is this prompt's `!skill` / `/skill:` names (058 R4 `explicitSkills`).
+	 */
+	async candidates(
+		query: string,
+		env: NodeJS.ProcessEnv = process.env,
+		explicit: readonly string[] = [],
+	): Promise<CustomMessage | undefined> {
 		if (!this.activation.active || !skillSearchSuggestOn(env)) return undefined;
 		try {
-			return (await this.search()).suggest(query);
+			return (await this.search()).suggest(query, explicit);
 		} catch {
 			// Candidates are optional: a failed index build or search never breaks the prompt.
 			return undefined;
 		}
 	}
 
-	/** R8 `session` record, once, after the first system prompt is set. Hashes only; nothing without a log dir. */
+	/**
+	 * R2, whenever the system prompt is rebuilt for an active tool set: if an allowlist, loadout or
+	 * `setActiveTools` leaves `skill_search` out, the session turns off (`tool_inactive`) and stays off, so no
+	 * candidate message ever points at a tool the model cannot call and the prompt keeps `<available_skills>`.
+	 */
+	syncActiveTools(activeNames: readonly string[]): void {
+		if (!this.activation.active || activeNames.includes(SKILL_SEARCH_TOOL_NAME)) return;
+		this.activation = { active: false, inactiveReason: "tool_inactive", mode: "off" };
+	}
+
+	/**
+	 * R8 `session` record, once, after the first system prompt is set. Hashes only; nothing without a log dir.
+	 * Never throws: a failed `prompt-hash` import, hash or write only drops the record, flag on or off.
+	 */
 	async logSession(context: Pick<Context, "systemPrompt" | "tools">): Promise<void> {
 		const env = this.options?.env ?? process.env;
 		if (this.sessionLogged || !env[RUN_LOG_DIR_ENV]?.trim()) return;
 		this.sessionLogged = true;
-		const { systemHash, toolsHash } = await import("omk-ai/prompt-hash");
-		const record = {
-			type: "session",
-			active: this.activation.active,
-			inactiveReason: this.activation.inactiveReason,
-			systemHash: systemHash(context),
-			toolsHash: toolsHash(context),
-		};
-		appendRunLog("skill-select", record, { env });
+		try {
+			const { systemHash, toolsHash } = await import("omk-ai/prompt-hash");
+			const record = {
+				type: "session",
+				active: this.activation.active,
+				inactiveReason: this.activation.inactiveReason,
+				mode: this.activation.mode,
+				...(this.activation.invalidMode ? { invalidMode: true } : {}),
+				systemHash: systemHash(context),
+				toolsHash: toolsHash(context),
+			};
+			appendRunLog("skill-select", record, { env });
+		} catch {
+			// The run log is diagnostics only; it never fails the prompt.
+		}
 	}
 
 	/** First search or candidate computation imports the index module (never on the startup path, R5). */
@@ -107,6 +135,7 @@ export class SkillSearchGate {
 					skills: options.skills,
 					agentDir: options.agentDir ?? getAgentDir(),
 					env: options.env ?? process.env,
+					mode: this.activation.mode === "metacon" ? "metacon" : "bm25",
 				}),
 		);
 		return this.session;

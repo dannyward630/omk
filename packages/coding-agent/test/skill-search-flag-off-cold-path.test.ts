@@ -17,8 +17,10 @@ const ENV_KEYS = [
 	"OMK_SKIP_VERSION_CHECK",
 	"OMK_SKILL_SEARCH",
 	"OMK_SKILL_SEARCH_SUGGEST",
+	"OMK_SKILL_SELECT",
 	"OMK_RUN_LOG_DIR",
 	"OMK_TRUST_PROJECT",
+	"OMK_PRINT_EXIT_GRACE_MS",
 ] as const;
 let loads = 0;
 
@@ -64,6 +66,28 @@ const CASES: Case[] = [
 		env: { OMK_SKILL_SEARCH: "1", OMK_SKILL_SEARCH_SUGGEST: "0" },
 		skills: 30,
 		loaded: false,
+		tool: true,
+	},
+	// Spec 058 AC 1/3: an unknown OMK_SKILL_SELECT value (wpl included) is off even with the alias set.
+	{
+		label: "OMK_SKILL_SELECT=wpl (unknown, off)",
+		env: { OMK_SKILL_SELECT: "wpl", OMK_SKILL_SEARCH: "1" },
+		skills: 30,
+		loaded: false,
+		tool: false,
+	},
+	{
+		label: "OMK_SKILL_SELECT=metacon, worker without a search",
+		env: { OMK_SKILL_SELECT: "metacon", OMK_SKILL_SEARCH_SUGGEST: "0" },
+		skills: 30,
+		loaded: false,
+		tool: true,
+	},
+	{
+		label: "OMK_SKILL_SELECT=metacon, lead task start (control)",
+		env: { OMK_SKILL_SELECT: "metacon" },
+		skills: 30,
+		loaded: true,
 		tool: true,
 	},
 	// Control: the counter does see the module when a task start computes candidates.
@@ -124,6 +148,8 @@ describe("skill search cold path (spec 050 AC 3)", () => {
 		process.env.OMK_FINISH_CHECK = "0";
 		process.env.OMK_OFFLINE = "1";
 		process.env.OMK_TRUST_PROJECT = "0";
+		// The print-mode exit guard (2 s timer after main) would fire inside a later case and hit the exit spy.
+		process.env.OMK_PRINT_EXIT_GRACE_MS = "0";
 		process.chdir(projectDir);
 		stdinTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
 		Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });

@@ -1,4 +1,4 @@
-/** Spec 050 R2: the fixed `skill_search` tool, registered only in skill-search sessions. */
+/** Spec 050 R2 / 058 R2: the fixed `skill_search` tool, registered only in skill-search sessions. */
 import { Type } from "omk-ai";
 import type { ToolDefinition } from "../extensions/types.ts";
 import {
@@ -12,9 +12,18 @@ export interface SkillSearchToolDetails {
 	readonly query: string;
 	readonly queryHash: string;
 	readonly limit: number;
-	/** Skills with a positive BM25 score (capped at 64). */
+	/** 058 R2: which ranker produced the list, for a future TUI card. */
+	readonly mode: "bm25" | "metacon";
+	/** Distinct skills with a positive BM25 score (capped at 64). */
 	readonly matchCount: number;
-	readonly candidates: readonly { readonly name: string; readonly score: number; readonly location: string }[];
+	readonly candidates: readonly {
+		readonly name: string;
+		/** BM25 score, in both modes. */
+		readonly score: number;
+		readonly location: string;
+		/** `metacon` pick, `bm25-fill` after the picks, or plain `bm25` order (058 R4.4). */
+		readonly source: "bm25" | "metacon" | "bm25-fill";
+	}[];
 }
 
 export type SkillSearchRunner = (

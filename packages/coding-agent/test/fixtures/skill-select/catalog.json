@@ -1,0 +1,186 @@
+{
+	"skills": [
+		{
+			"name": "csv-clean",
+			"description": "Clean CSV files: CSV quoting, CSV delimiters, CSV headers."
+		},
+		{
+			"name": "csv-merge",
+			"description": "Merge CSV files: join CSV rows, CSV keys, CSV columns."
+		},
+		{
+			"name": "csv-validate",
+			"description": "Validate CSV files: CSV schema, CSV types, CSV encodings."
+		},
+		{
+			"name": "chart-render",
+			"description": "Render many kinds of diagrams and figures, including a plot, for reports, dashboards, slides, notebooks, papers and web pages with consistent theming."
+		},
+		{
+			"name": "pdf-forms",
+			"description": "Fill and extract PDF forms with pypdf."
+		},
+		{
+			"name": "pdf-redact",
+			"description": "Redact sensitive text in PDF documents."
+		},
+		{
+			"name": "docx-edit",
+			"description": "Edit Word documents with tracked changes."
+		},
+		{
+			"name": "xlsx-formulas",
+			"description": "Write spreadsheet formulas and pivot tables."
+		},
+		{
+			"name": "pptx-build",
+			"description": "Build slide decks from outlines."
+		},
+		{
+			"name": "kubernetes-deploy",
+			"description": "Deploy services to a kubernetes cluster with helm charts."
+		},
+		{
+			"name": "docker-build",
+			"description": "Write Dockerfiles and build small container images."
+		},
+		{
+			"name": "terraform-plan",
+			"description": "Plan and apply terraform infrastructure changes."
+		},
+		{
+			"name": "sql-tuning",
+			"description": "Tune slow SQL queries with explain plans and indexes."
+		},
+		{
+			"name": "postgres-migrate",
+			"description": "Write safe postgres schema migrations."
+		},
+		{
+			"name": "redis-cache",
+			"description": "Add a redis cache layer with expiry rules."
+		},
+		{
+			"name": "react-component",
+			"description": "Build accessible react components with hooks."
+		},
+		{
+			"name": "css-layout",
+			"description": "Fix CSS layout with flexbox and grid."
+		},
+		{
+			"name": "a11y-audit",
+			"description": "Audit web pages for accessibility issues."
+		},
+		{
+			"name": "git-bisect",
+			"description": "Find the commit that introduced a bug with git bisect."
+		},
+		{
+			"name": "git-rebase",
+			"description": "Rebase branches and resolve merge conflicts."
+		},
+		{
+			"name": "python-typing",
+			"description": "Add type hints and fix mypy errors in python code."
+		},
+		{
+			"name": "rust-borrow",
+			"description": "Fix rust borrow checker errors and lifetimes."
+		},
+		{
+			"name": "go-concurrency",
+			"description": "Debug goroutine leaks and data races in go."
+		},
+		{
+			"name": "unit-tests",
+			"description": "Write focused unit tests with fixtures and mocks."
+		},
+		{
+			"name": "flaky-tests",
+			"description": "Find and fix flaky tests in a test suite."
+		},
+		{
+			"name": "perf-profile",
+			"description": "Profile CPU hot paths and memory use."
+		},
+		{
+			"name": "log-search",
+			"description": "Search structured logs for errors and traces."
+		},
+		{
+			"name": "api-design",
+			"description": "Design REST API endpoints and error codes."
+		},
+		{
+			"name": "graphql-schema",
+			"description": "Design GraphQL schemas and resolvers."
+		},
+		{
+			"name": "auth-oauth",
+			"description": "Implement OAuth login flows and token refresh."
+		},
+		{
+			"name": "secret-scan",
+			"description": "Scan a repository for leaked secrets and keys."
+		},
+		{
+			"name": "regex-help",
+			"description": "Write and test regular expressions."
+		},
+		{
+			"name": "shell-script",
+			"description": "Write portable bash shell scripts."
+		},
+		{
+			"name": "image-resize",
+			"description": "Resize and compress images in bulk."
+		},
+		{
+			"name": "video-trim",
+			"description": "Trim and transcode video clips with ffmpeg."
+		},
+		{
+			"name": "email-draft",
+			"description": "Draft clear professional emails."
+		},
+		{
+			"name": "release-notes",
+			"description": "Write release notes from a commit list."
+		},
+		{
+			"name": "changelog-keep",
+			"description": "Keep a changelog in a standard format."
+		},
+		{
+			"name": "i18n-strings",
+			"description": "Extract UI strings for translation."
+		},
+		{
+			"name": "math-proof",
+			"description": "Check step by step math proofs."
+		}
+	],
+	"queries": [
+		{
+			"id": "q1",
+			"text": "csv plot"
+		},
+		{
+			"id": "q2",
+			"text": "fill the pdf form and redact the phone numbers"
+		},
+		{
+			"id": "q3",
+			"text": "the deploy to kubernetes fails after the docker build"
+		},
+		{
+			"id": "q4",
+			"text": "slow sql query in the postgres migration"
+		},
+		{
+			"id": "q5",
+			"text": "fix flaky unit tests"
+		}
+	]
+}

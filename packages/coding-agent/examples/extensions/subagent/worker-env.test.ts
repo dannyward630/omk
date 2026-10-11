@@ -27,6 +27,9 @@ describe("subagentWorkerEnv", () => {
 		expect(env.OMK_SKILL_SEARCH).toBe("on");
 		expect(env.OMK_SKILL_SEARCH_SUGGEST).toBe("0");
 		expect(subagentWorkerEnv({}).OMK_SKILL_SEARCH_SUGGEST).toBe("0");
+		const metacon = subagentWorkerEnv({ OMK_SKILL_SELECT: "metacon" });
+		expect(metacon.OMK_SKILL_SELECT).toBe("metacon");
+		expect(metacon.OMK_SKILL_SEARCH_SUGGEST).toBe("0");
 	});
 
 	it("lets OMK_FINISH_CHECK_WORKERS opt workers in", () => {

@@ -11,9 +11,10 @@
  * so workers always get it off. The project trust env (spec 053) is not inherited:
  * the caller passes `OMK_TRUST_PROJECT` only when the parent trusted its project and
  * the worker cwd's gated items hash the same (`workerProjectTrustEnv`), or "0" when
- * the parent runs with it forced off. Workers inherit `OMK_SKILL_SEARCH` but never
- * get automatic skill candidate messages (spec 050 R7). Adaptive reasoning effort (spec 037) is
- * always off in workers.
+ * the parent runs with it forced off. Workers inherit `OMK_SKILL_SEARCH` and
+ * `OMK_SKILL_SELECT` (spec 058 R1) but never get automatic skill candidate
+ * messages (spec 050 R7). Adaptive reasoning effort (spec 037) is always off
+ * in workers.
  */
 const LEAD_ONLY_VARS = [
 	"OMK_TIME_BUDGET_SEC",

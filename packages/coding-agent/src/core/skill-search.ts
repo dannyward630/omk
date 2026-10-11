@@ -1,19 +1,20 @@
 /**
- * Spec 050 R3–R5, R8: lazy skill index, BM25 ranking, candidate messages and `skill-select` run-log records.
+ * Spec 050 R3–R5, R8 and spec 058 R2–R7: lazy skill index, ranking (`bm25` or `metacon`, see
+ * `skill-select-rankers.ts`), candidate messages and `skill-select` run-log records.
  *
  * Imported only on the first `skill_search` call or the first candidate computation of a skill-search
  * session (never on the startup path, AC 3). The index is the list of model-invocable skills
  * (name, short description, location) and is cached at `<agentDir>/cache/skill-index-v1.json`, keyed by a
  * fingerprint of the index algorithm version and each SKILL.md's path, size, mtime and inode
- * (`skill-index-store.ts`). Ranking is `searchCorpus` (BM25) over
- * `name + " " + description`.
+ * (`skill-index-store.ts`). The `contentHash` used to merge identical
+ * skills (058 R2) comes from the current `loadSkills()` result, not from the index file.
  */
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { retrievalTokens, searchCorpus } from "../metacognition/retrieval.ts";
+import { retrievalTokens } from "../metacognition/retrieval.ts";
 import { escapeXml } from "./context-budget-system-prompt-items.ts";
 import type { CustomMessage } from "./messages.ts";
-import { appendRunLog } from "./run-log.ts";
+import { appendRunLog, type RunLogRecord } from "./run-log.ts";
 import {
 	fingerprintSkills,
 	type IndexDoc,
@@ -21,6 +22,15 @@ import {
 	SKILL_INDEX_FILE,
 	writeIndexFile,
 } from "./skill-index-store.ts";
+import {
+	contentTokens,
+	type MetaconStats,
+	type RankDoc,
+	type RankResult,
+	rankSkills,
+	type SkillRankSource,
+	type SkillSelectRankMode,
+} from "./skill-select-rankers.ts";
 import type { Skill } from "./skills.ts";
 import { compactSkillDescription } from "./skills-prompt.ts";
 import type { SkillSearchToolDetails } from "./tools/skill-search-tool.ts";
@@ -38,21 +48,30 @@ export const SKILL_CANDIDATE_K = 3;
  */
 export const SKILL_CANDIDATE_MIN_SCORE = 2;
 const MAX_QUERY_CHARS = 4096;
-const MATCH_COUNT_CAP = 64;
 
 export interface SkillHit extends IndexDoc {
 	readonly score: number;
+	readonly source: SkillRankSource;
 }
 
 export interface SkillSearchSessionOptions {
 	readonly skills: () => readonly Skill[];
 	readonly agentDir: string;
 	readonly env: NodeJS.ProcessEnv;
+	/** 058 R1: the ranker chosen at session start (default `bm25`). */
+	readonly mode?: SkillSelectRankMode;
+	/**
+	 * 058 R4 `phase`: 049's `activeTodoKind()` once it exists. Unset (049 not on main) means `"task"`.
+	 * TODO(049): pass `() => activeTodoKind()` from the session when `todo-runtime-state.ts` exports it.
+	 */
+	readonly phase?: () => string | undefined;
 }
 
 /** Per-session state: the loaded index, and which skills were already offered (R3, AC 6). */
 export class SkillSearchSession {
-	private index: { skills: readonly Skill[]; fingerprint: string; docs: readonly IndexDoc[] } | undefined;
+	private index:
+		| { skills: readonly Skill[]; fingerprint: string; docs: readonly IndexDoc[]; ranked: readonly RankDoc[] }
+		| undefined;
 	private readonly suggested = new Set<string>();
 	private readonly searched = new Set<string>();
 
@@ -65,8 +84,8 @@ export class SkillSearchSession {
 	/** `skill_search` tool body. */
 	search(query: string, limit: number): { text: string; details: SkillSearchToolDetails } {
 		const started = performance.now();
-		const all = this.rank(query, MATCH_COUNT_CAP);
-		const hits = all.slice(0, limit);
+		const result = this.rank(query, { limit });
+		const hits = result.hits;
 		for (const hit of hits) this.searched.add(hit.name);
 		this.log({
 			type: "search",
@@ -74,7 +93,7 @@ export class SkillSearchSession {
 			limit,
 			returned: hits.length,
 			skillHashes: hits.map((hit) => shortHash(hit.name)),
-			ms: elapsed(started),
+			...this.rankRecord(result, started),
 		});
 		const text =
 			hits.length === 0
@@ -86,20 +105,28 @@ export class SkillSearchSession {
 				query,
 				queryHash: shortHash(query),
 				limit,
-				matchCount: all.length,
-				candidates: hits.map((hit) => ({ name: hit.name, score: round3(hit.score), location: hit.location })),
+				mode: this.mode,
+				matchCount: result.matchCount,
+				candidates: hits.map((hit) => ({
+					name: hit.name,
+					score: round3(hit.score),
+					location: hit.location,
+					source: hit.source,
+				})),
 			},
 		};
 	}
 
 	/** R3 task start: one message with the top new candidates, or none below the floor. */
-	suggest(query: string): CustomMessage | undefined {
+	suggest(query: string, explicit: readonly string[] = []): CustomMessage | undefined {
 		const started = performance.now();
-		const ranked = this.rank(taskQuery(query.slice(0, MAX_QUERY_CHARS)), MATCH_COUNT_CAP);
-		const top = ranked[0]?.score ?? 0;
-		const fresh = ranked
-			.filter((hit) => hit.score >= SKILL_CANDIDATE_MIN_SCORE && !this.suggested.has(hit.name))
-			.slice(0, SKILL_CANDIDATE_K);
+		const result = this.rank(taskQuery(query.slice(0, MAX_QUERY_CHARS)), {
+			limit: SKILL_CANDIDATE_K,
+			exclude: this.suggested,
+			explicit,
+		});
+		const top = Math.max(0, ...result.hits.map((hit) => hit.score));
+		const fresh = result.hits.filter((hit) => hit.score >= SKILL_CANDIDATE_MIN_SCORE);
 		for (const hit of fresh) this.suggested.add(hit.name);
 		this.log({
 			type: "suggest",
@@ -109,7 +136,7 @@ export class SkillSearchSession {
 			skillHashes: fresh.map((hit) => shortHash(hit.name)),
 			topScore: round3(top),
 			belowFloor: top < SKILL_CANDIDATE_MIN_SCORE,
-			ms: elapsed(started),
+			...this.rankRecord({ ...result, hits: fresh }, started),
 		});
 		if (fresh.length === 0) return undefined;
 		return {
@@ -128,15 +155,32 @@ export class SkillSearchSession {
 		return "none";
 	}
 
-	private rank(query: string, limit: number): SkillHit[] {
-		const docs = this.docs();
-		if (query.trim() === "" || docs.length === 0) return [];
-		const corpus = docs.map((doc) => ({ id: doc.name, uri: doc.location, body: `${doc.name} ${doc.description}` }));
-		const byName = new Map(docs.map((doc) => [doc.name, doc]));
-		return searchCorpus(query.slice(0, MAX_QUERY_CHARS), corpus, limit).flatMap((hit) => {
-			const doc = byName.get(hit.id);
-			return doc ? [{ ...doc, score: hit.score }] : [];
-		});
+	private get mode(): SkillSelectRankMode {
+		return this.options.mode ?? "bm25";
+	}
+
+	private rank(
+		query: string,
+		options: { limit: number; exclude?: ReadonlySet<string>; explicit?: readonly string[] },
+	): RankResult & { hits: readonly SkillHit[] } {
+		this.docs();
+		const ranked = this.index?.ranked ?? [];
+		return rankSkills(this.mode, query, ranked, { ...options, phase: this.options.phase?.() });
+	}
+
+	/** 058 R7 fields shared by `search` and `suggest`: hashes, scores and numbers only. */
+	private rankRecord(result: RankResult, started: number): RunLogRecord {
+		return {
+			mode: this.mode,
+			candidateCount: result.matchCount,
+			top: result.hits.map((hit) => ({
+				nameHash: shortHash(hit.name),
+				score: round3(hit.score),
+				source: hit.source,
+			})),
+			latencyMs: elapsed(started),
+			...metaconRecord(result.metacon),
+		};
 	}
 
 	/** Builds or loads the index on first use; `/reload` with different skills rebuilds it (new fingerprint). */
@@ -147,7 +191,7 @@ export class SkillSearchSession {
 		const skills = loaded.filter((skill) => !skill.disableModelInvocation);
 		const fingerprint = fingerprintSkills(skills);
 		if (this.index?.fingerprint === fingerprint) {
-			this.index = { ...this.index, skills: loaded };
+			this.index = { ...this.index, skills: loaded, ranked: withContentHashes(this.index.docs, skills) };
 			return this.index.docs;
 		}
 		const started = performance.now();
@@ -169,7 +213,7 @@ export class SkillSearchSession {
 			}));
 			cacheBytes = writeIndexFile(path, { version: 1, fingerprint, truncated, docs });
 		}
-		this.index = { skills: loaded, fingerprint, docs };
+		this.index = { skills: loaded, fingerprint, docs, ranked: withContentHashes(docs, skills) };
 		this.log({
 			type: "index",
 			skills: skills.length,
@@ -183,9 +227,36 @@ export class SkillSearchSession {
 		return docs;
 	}
 
-	private log(record: Parameters<typeof appendRunLog>[1]): void {
+	private log(record: RunLogRecord): void {
 		appendRunLog("skill-select", record, { env: this.options.env });
 	}
+}
+
+/** 058 R7 `metacon` fields; absent optional fields are left out (the run log takes no `undefined`). */
+function metaconRecord(stats: MetaconStats | undefined): RunLogRecord {
+	if (!stats) return {};
+	return {
+		prefilter: stats.prefilter,
+		needs: stats.needs,
+		coveredNeeds: stats.coveredNeeds,
+		rejected: { ...stats.rejected },
+		phase: stats.phase,
+		phaseSource: stats.phaseSource,
+		planMs: stats.planMs,
+		...(stats.algorithm ? { algorithm: stats.algorithm } : {}),
+		...(stats.state ? { state: stats.state } : {}),
+		...(stats.overBudget ? { overBudget: true } : {}),
+		...(stats.fallback ? { fallback: stats.fallback } : {}),
+	};
+}
+
+/** 058 R2: the `contentHash` of each indexed skill, looked up by location in the current `loadSkills()` result. */
+function withContentHashes(docs: readonly IndexDoc[], skills: readonly Skill[]): RankDoc[] {
+	const hashes = new Map(skills.map((skill) => [skill.filePath, skill.contentHash]));
+	return docs.map((doc) => {
+		const contentHash = hashes.get(doc.location);
+		return contentHash ? { ...doc, contentHash } : doc;
+	});
 }
 
 export function renderCandidates(hits: readonly IndexDoc[]): string {
@@ -212,19 +283,11 @@ function queryTokenCount(query: string): number {
 }
 
 /**
- * Common words a task sentence is full of. In a small catalog the few descriptions that contain "and" or
- * "to" give them a high IDF, so the automatic candidates rank on content words only.
+ * Task-start query: content words only (stop words and one-letter tokens removed, `contentTokens`). In a small
+ * catalog the few descriptions that contain "and" or "to" give them a high IDF.
  */
-const TASK_STOP_WORDS = new Set(
-	"a an and are as at be by can do for from in into is it its me my now of on or our please so that the then this to up us we with you your".split(
-		" ",
-	),
-);
-
 function taskQuery(query: string): string {
-	return retrievalTokens(query)
-		.filter((token) => token.length > 1 && !TASK_STOP_WORDS.has(token))
-		.join(" ");
+	return contentTokens(query).join(" ");
 }
 
 function round3(value: number): number {
