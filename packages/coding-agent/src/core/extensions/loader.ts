@@ -17,6 +17,7 @@ import { readPackageManifest } from "../package-manifest.ts";
 import { LEGACY_PI_RUNTIME_ALIASES, type PiCompatibilityTarget } from "../pi-compat.ts";
 import { createSyntheticSourceInfo } from "../source-info.ts";
 import { markContextHandlerNonMutating } from "./context-handler-options.ts";
+import { attachLoadedExtensionsAccessor, trackLoadedExtensions } from "./internal-loaded-extensions.ts";
 import { buildVirtualModulesLazily, createJitiLazily } from "./lazy-imports.ts";
 import type {
 	Extension,
@@ -229,6 +230,8 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		callMcpTool: undefined,
 		flagValues: new Map(),
 		pendingProviderRegistrations: [],
+		// Provider name → owning extension resolvedPath (spec 057 R9); read by the subagent via the internal list.
+		providerOwners: new Map(),
 		assertActive,
 		invalidate: (message) => {
 			state.staleMessage ??=
@@ -408,13 +411,16 @@ function createExtensionAPI(
 			runtime.setThinkingLevel(level);
 		},
 
+		// Owner is recorded here, before delegating, so it covers the pre-bind queue and post-bind calls (spec 057 R9).
 		registerProvider(name: string, config: ProviderConfig) {
 			runtime.assertActive();
+			runtime.providerOwners.set(name, extension.resolvedPath);
 			runtime.registerProvider(name, config, extension.path);
 		},
 
 		unregisterProvider(name: string) {
 			runtime.assertActive();
+			if (runtime.providerOwners.get(name) === extension.resolvedPath) runtime.providerOwners.delete(name);
 			runtime.unregisterProvider(name, extension.path);
 		},
 
@@ -433,7 +439,8 @@ function createExtensionAPI(
 		},
 	} as ExtensionAPI;
 
-	return api;
+	// Internal, symbol-keyed loaded-extension list for the bundled subagent (spec 057 R10); not on ExtensionAPI.
+	return attachLoadedExtensionsAccessor(api, runtime);
 }
 
 async function loadExtensionModule(extensionPath: string, binaryMode = isBunBinary) {
@@ -523,11 +530,11 @@ export async function loadExtensionFromFactory(
  * Load extensions from paths.
  */
 export async function loadExtensions(paths: string[], cwd: string, eventBus?: EventBus): Promise<LoadExtensionsResult> {
-	const extensions: Extension[] = [];
+	const runtime = createExtensionRuntime();
+	const extensions = trackLoadedExtensions(runtime, []);
 	const errors: Array<{ path: string; error: string }> = [];
 	const resolvedCwd = resolvePath(cwd);
 	const resolvedEventBus = eventBus ?? createEventBus();
-	const runtime = createExtensionRuntime();
 
 	for (const extPath of paths) {
 		const { extension, error } = await loadExtension(extPath, resolvedCwd, resolvedEventBus, runtime);
@@ -537,16 +544,10 @@ export async function loadExtensions(paths: string[], cwd: string, eventBus?: Ev
 			continue;
 		}
 
-		if (extension) {
-			extensions.push(extension);
-		}
+		if (extension) extensions.push(extension);
 	}
 
-	return {
-		extensions,
-		errors,
-		runtime,
-	};
+	return { extensions, errors, runtime };
 }
 
 function isExtensionFile(name: string): boolean {

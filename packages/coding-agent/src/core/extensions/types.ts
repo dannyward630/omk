@@ -1066,10 +1066,7 @@ export interface SessionBeforeCompactResult {
 
 export interface SessionBeforeTreeResult {
 	cancel?: boolean;
-	summary?: {
-		summary: string;
-		details?: unknown;
-	};
+	summary?: { summary: string; details?: unknown };
 	/** Override custom instructions for summarization */
 	customInstructions?: string;
 	/** Override whether customInstructions replaces the default prompt */
@@ -1505,6 +1502,12 @@ export interface ExtensionRuntimeState {
 	flagValues: Map<string, boolean | string>;
 	/** Provider registrations queued during extension loading, processed when runner binds */
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig; extensionPath: string }>;
+	/**
+	 * Provider name → `resolvedPath` of the extension that registered it last (spec 057 R9).
+	 * Written by the per-extension `registerProvider`; cleared only by the owner's `unregisterProvider`.
+	 * Built-in overrides (`baseUrl`/`headers` only) count as ownership (R11).
+	 */
+	providerOwners: Map<string, string>;
 	/** Throws when this extension instance is stale after runtime replacement. */
 	assertActive: () => void;
 	/** Marks this extension instance as stale after runtime replacement or reload. */
