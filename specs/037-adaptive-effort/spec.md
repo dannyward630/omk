@@ -5,9 +5,9 @@ description: "Keep the configured reasoning effort while the agent plans, debugs
 # Feature Specification: Adaptive reasoning effort per phase
 
 **Specification ID**: `037-adaptive-effort`
-**Feature Branch**: `spec/037-adaptive-effort` (this PR: spec + test fixture only, from origin/main `b60d3c4`)
+**Feature Branch**: `spec/037-adaptive-effort` (spec + test fixture, PR #129, merged as `86f5612`); implementation `feat/037-adaptive-effort` from origin/main `7da50f6`
 **Created**: 2026-10-11
-**Status**: Draft (no implementation in this PR)
+**Status**: Implementation (flag default off; effect unverified until the A/B)
 **Constitution**: [specs/constitution.md](../constitution.md)
 **Input**: 인호's request to vary reasoning effort by todo and task. Tech Lead split it into 049 (typed todos, OMK) and this spec (effort, Runtime Engineer). Rules below were settled in the team room on 2026-10-11 by Tech Lead, Bench Analyst, OMK and Runtime Engineer; the effort direction was reversed on 2026-10-11 (see Decisions).
 **Depends on**: 049 (`TodoKind`, `activeTodoKind()`; branch `feat/049-typed-todos`, not on main yet), 059 (`llm-call.jsonl`, Runtime Engineer's separate PR that reserves `phase`/`phaseSource` as `null`), 033 (response reasoning cap, on main), 042 (`appendRunLog`), 051 (`omk-ai` `prompt-hash`).
@@ -51,17 +51,17 @@ Where 033 wraps the stream:
 ### 1. Activation and insertion point
 
 - Off unless `OMK_ADAPTIVE_EFFORT=1` (exactly `1`; anything else, including unset, is off). Read once when the stream function is built.
-- **Insertion point: `core/sdk-provider-stream.ts` `createSdkProviderStream`, outermost.** After 059 (#128) lands, that function already returns `cap(llmCallLog(provider))`; 037 wraps it, so the composed stream is `adaptive(cap(llmCallLog(provider)))`:
+- **Insertion point: `core/sdk-provider-stream.ts` `createSdkProviderStream`, outermost.** On main `7da50f6` (059, #128) that function returns `cap(llmCallLog(provider))`, with the model contract applied inside `provider`. The implementation PR moves the contract into its own layer above the log (Tech Lead's #128 review: `effortSent` must be read after the contract), and 037 wraps the result, so the composed stream is `adaptive(cap(contract(llmCallLog(provider))))`:
 
   ```ts
   const capped = createResponseReasoningCapStreamFn(
-  	createLlmCallRunLogStreamFn(createProviderStream(runtime)),
+  	createModelContractStreamFn(createLlmCallRunLogStreamFn(createProviderStream(runtime)), runtime.modelContract),
   	resolveResponseReasoningCapConfig(),
   );
   return process.env.OMK_ADAPTIVE_EFFORT === "1" ? createLazyAdaptiveEffortStreamFn(capped) : capped;
   ```
 
-  The 059 log is innermost, so each provider request (including a 033 retry) is logged with the effort it was actually sent with, after 037 and the cap have chosen it.
+  The 059 log is innermost, so each provider request (including a 033 retry) is logged with the effort it was actually sent with, after 037, the cap and the model contract. Without a contract `createModelContractStreamFn` returns its inner stream itself; a request the contract refuses never reaches the log.
 
   `createLazyAdaptiveEffortStreamFn` is a few lines in `sdk-provider-stream.ts`: on its first call it does `await import("./adaptive-effort.ts")` and keeps the wrapper. With the flag off nothing is imported, the returned function is the same `capped` object as today, and request bytes match main.
 - **Composition with 033.** The adaptive wrapper decides the effort and passes it as `options.reasoning` to the cap wrapper. The cap therefore applies to the effort actually sent: it measures that attempt and, on overrun, retries one step below *that* effort. A 033 retry happens inside one outer call, so it is not a classification and does not move 037's state.
@@ -89,6 +89,10 @@ Resolution, in order:
 4. Otherwise keep the previous phase and its source; at the start of a run, no phase (low group).
 
 `activeTodoDifficulty()` is not read in v1 (no data yet).
+
+**Until 049 is on main** (not on `7da50f6`): `phase-classifier.ts` defines `TodoKind` locally with the same five values (marked `TODO(049)`), and `createAdaptiveEffortStreamFn` takes the todo kind as an injected `todoKind()` that defaults to no todo signal. Phases then come from tool calls only. Wiring `activeTodoKind()` (and importing 049's `TodoKind`) is a follow-up once 049 merges.
+
+**Implementation choices** (not fixed above): tools that give no tool signal (`update_todo`, subagent, MCP, …) are not added to `recent`, as in `phase_r8_v3.load_runs`; the classifier's previous phase starts undefined (the bench script starts at `run`; both are the low group). Every outer call with tools is one classification, including a call that re-sends a context with no new tool calls (it resolves to the previous phase). A `lowerClamped` call neither advances the 2-classification count nor changes the group, so every group change is a counted switch and the 4-switch cap always ends in low.
 
 ### 3. Classifier (`core/phase-classifier.ts`, pure functions)
 
@@ -264,12 +268,13 @@ This PR:
 - `specs/037-adaptive-effort/spec.md`
 - `packages/coding-agent/test/fixtures/phase-classifier-r8.json`: Bench Analyst's `phase_fixture_v3.json` byte for byte (sha256 `3288f329ae2500a09f0e54089df4488575f906c35277bd1d8d466f0fd47acf96`); masking checked: no absolute user paths, URLs, tokens or TB task names
 
-Implementation PR:
-- `packages/coding-agent/src/core/phase-classifier.ts`: pure classifier and phase resolution
-- `packages/coding-agent/src/core/adaptive-effort.ts`: `StreamFn` wrapper, hysteresis and cap state, `activeTodoKind()` read, 059 field setter
-- `packages/coding-agent/src/core/sdk-provider-stream.ts`: flag check and lazy wrapper (outermost, around `cap(llmCallLog(provider))`)
-- `packages/coding-agent/src/core/llm-call-run-log.ts`: setter that fills `phase`/`phaseSource` (and 037's effort fields) for the current call; never called with the flag off
-- `packages/coding-agent/CHANGELOG.md`: Unreleased entry for the opt-in flag (and `README.md` release section via `scripts/sync-readme-releases.mjs`)
+Implementation PR (`feat/037-adaptive-effort`, from origin/main `7da50f6`):
+- `specs/037-adaptive-effort/spec.md`: this update (base, Expected Files, 049 interim, composition)
+- `packages/coding-agent/src/core/phase-classifier.ts`: pure classifier, phase resolution and groups; local `TodoKind` until 049
+- `packages/coding-agent/src/core/adaptive-effort.ts`: `StreamFn` wrapper, low-group level, hysteresis and cap state, injected todo kind, 059 field setter call
+- `packages/coding-agent/src/core/sdk-provider-stream.ts`: model contract as its own layer above the 059 log (#128 review), flag check and lazy wrapper (outermost, around `cap(contract(llmCallLog(provider)))`)
+- `packages/coding-agent/src/core/llm-call-run-log.ts`: `setLlmCallPhaseFields` fills `phase`/`phaseSource` and adds `effortGroup`/`effortSwitch`/`lowerClamped` for the current call; never called with the flag off
+- `packages/coding-agent/CHANGELOG.md`: Unreleased entries for the opt-in flag and the `effortSent` fix (`scripts/sync-readme-releases.mjs` run; README release sections only list released versions, so no change)
 - `packages/coding-agent/examples/extensions/subagent/worker-env.ts`: `OMK_ADAPTIVE_EFFORT=0`
-- `packages/coding-agent/docs/environment-variables.md`
-- Tests: `test/phase-classifier.test.ts`, `test/adaptive-effort.test.ts`, `test/adaptive-effort-flag-off-cold-path.test.ts`, `test/suite/adaptive-effort-cache.test.ts`
+- `packages/coding-agent/docs/environment-variables.md`: `OMK_ADAPTIVE_EFFORT` row and the full `llm-call.jsonl` field list
+- Tests: `test/phase-classifier.test.ts`, `test/adaptive-effort.test.ts`, `test/adaptive-effort-flag-off-cold-path.test.ts`, `test/suite/adaptive-effort-cache.test.ts`, `test/sdk-provider-stream-contract-log.test.ts` (#128 review: `effortSent` after the contract), `test/finish-check-reverify.test.ts` (worker env)
