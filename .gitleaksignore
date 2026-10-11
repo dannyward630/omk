@@ -42,6 +42,7 @@
 61729aa8c848fea87544fb901155e56ebdff874d:packages/coding-agent/test/native-adoption-benchmark.test.ts:generic-api-key:173
 61729aa8c848fea87544fb901155e56ebdff874d:packages/coding-agent/test/native-adoption-benchmark.test.ts:generic-api-key:34
 61729aa8c848fea87544fb901155e56ebdff874d:packages/coding-agent/test/native-adoption-benchmark.test.ts:github-pat:187
+6193813f4063a308af4465771048e751f0b1fdc7:packages/coding-agent/test/adaptive-effort.test.ts:generic-api-key:29
 63e8de6af78312f6e93f84976a0cd7788e71cd1e:packages/coding-agent/test/agent-session-retry-recovery.test.ts:generic-api-key:156
 63e8de6af78312f6e93f84976a0cd7788e71cd1e:packages/coding-agent/test/agent-session-retry-recovery.test.ts:generic-api-key:157
 63e8de6af78312f6e93f84976a0cd7788e71cd1e:packages/coding-agent/test/agent-session-retry-recovery.test.ts:generic-api-key:216
