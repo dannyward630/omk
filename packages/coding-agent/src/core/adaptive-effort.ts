@@ -21,7 +21,7 @@ import {
 	type Model,
 	type ThinkingLevel,
 } from "omk-ai";
-import { effortSentFor, type LlmCallPhaseFields, setLlmCallPhaseFields } from "./llm-call-run-log.ts";
+import { effortSentFor, type LlmCallPhaseFields, withLlmCallPhaseFields } from "./llm-call-run-log.ts";
 import {
 	decideCall,
 	type EffortGroup,
@@ -48,7 +48,7 @@ export interface AdaptiveEffortOptions {
 	 * Defaults to the read-only accessor, independent of `OMK_TODO_VERIFY`.
 	 */
 	readonly todoKind?: () => TodoKind | undefined;
-	/** Run-log sink for the 037 fields; defaults to the `llm-call.jsonl` setter (spec 059). */
+	/** Optional observer for the 037 fields; run-log metadata is scoped independently. */
 	readonly record?: (fields: LlmCallPhaseFields | undefined) => void;
 }
 
@@ -156,18 +156,22 @@ class AdaptiveEffortState {
 /** Wrap `inner` (the 033 cap around the 059 log around the provider) with per-phase effort. */
 export function createAdaptiveEffortStreamFn(inner: StreamFn, options: AdaptiveEffortOptions = {}): StreamFn {
 	const todoKind = options.todoKind ?? activeTodoKind;
-	const record = options.record ?? setLlmCallPhaseFields;
+	const record = options.record;
 	const state = new AdaptiveEffortState();
 	return (model, context, streamOptions) => {
 		// Summary and compaction calls carry no tools: untouched, and they do not move the state.
 		if (!context.tools || context.tools.length === 0) {
-			record(undefined);
-			return inner(model, context, streamOptions);
+			return withLlmCallPhaseFields(undefined, () => {
+				record?.(undefined);
+				return inner(model, context, streamOptions);
+			});
 		}
 		const low = lowGroupEffort(model, streamOptions?.reasoning);
 		const fields = state.classify(context, todoKind(), low === undefined);
-		record(fields);
-		if (fields.effortGroup === "high" || low === undefined) return inner(model, context, streamOptions);
-		return inner(model, context, { ...streamOptions, reasoning: low });
+		return withLlmCallPhaseFields(fields, () => {
+			record?.(fields);
+			if (fields.effortGroup === "high" || low === undefined) return inner(model, context, streamOptions);
+			return inner(model, context, { ...streamOptions, reasoning: low });
+		});
 	};
 }

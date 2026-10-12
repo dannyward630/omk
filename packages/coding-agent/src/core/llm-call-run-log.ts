@@ -17,8 +17,8 @@
  * tool arguments, model output, paths, URLs, headers or error messages.
  *
  * `phase` and `phaseSource` are `null` unless spec 037 (`OMK_ADAPTIVE_EFFORT=1`) fills them through
- * `setLlmCallPhaseFields`, together with `effortGroup`, `effortSwitch` and `lowerClamped`. With the
- * flag off the setter is never called, so the line is the same as before 037.
+ * a call-owned async scope, together with `effortGroup`, `effortSwitch` and `lowerClamped`. With
+ * the flag off no scope is allocated, so the line is the same as before 037.
  *
  * COST: `costTotal` is omk's own `usage.cost.total`, which leaves out xAI reasoning tokens, so
  * verdicts use xAI `cost_in_usd_ticks` only. omk's usage parsers drop that raw field (see spec
@@ -26,6 +26,7 @@
  * the adapter's `omk_usage_raw.jsonl`. When no usage arrived (a cap abort cuts the stream before
  * the final usage chunk), every usage and cost number is `null`, never 0, with `usageMissing: true`.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { StreamFn } from "omk-agent-core";
 import {
 	type Api,
@@ -69,21 +70,25 @@ export interface LlmCallPhaseFields {
 	readonly lowerClamped: boolean;
 }
 
-/**
- * Set by spec 037 right before each outer call; `undefined` for calls it passes through.
- * One value per process, like `lastCallEndAt`: overlapping calls may read each other's fields.
- */
-let phaseFields: LlmCallPhaseFields | undefined;
+let phaseFields: AsyncLocalStorage<{ fields: LlmCallPhaseFields | undefined }> | undefined;
 
-/** Spec 037 only, and only with `OMK_ADAPTIVE_EFFORT=1`: fields for the next provider request(s). */
+/** Own phase metadata and switch consumption for one outer call, including its asynchronous retries. */
+export function withLlmCallPhaseFields<T>(fields: LlmCallPhaseFields | undefined, call: () => T): T {
+	phaseFields ??= new AsyncLocalStorage();
+	return phaseFields.run({ fields }, call);
+}
+
+/** Update the current call's metadata; an undefined value also supports existing test cleanup. */
 export function setLlmCallPhaseFields(fields: LlmCallPhaseFields | undefined): void {
-	phaseFields = fields;
+	const store = phaseFields?.getStore();
+	if (store) store.fields = fields;
 }
 
 /** A 033 retry inside the same outer call keeps the phase but does not repeat `effortSwitch`. */
 function takePhaseFields(): LlmCallPhaseFields | undefined {
-	const fields = phaseFields;
-	if (fields?.effortSwitch) phaseFields = { ...fields, effortSwitch: null };
+	const store = phaseFields?.getStore();
+	const fields = store?.fields;
+	if (store && fields?.effortSwitch) store.fields = { ...fields, effortSwitch: null };
 	return fields;
 }
 
