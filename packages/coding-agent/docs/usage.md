@@ -24,12 +24,22 @@ The editor can be replaced temporarily by built-in UI such as `/settings` or by 
 | Multi-line input | Shift+Enter, or Ctrl+Enter on Windows Terminal |
 | Images | Paste screenshots with Ctrl+V / Alt+V, drop local image paths into the terminal, or use `/attach add <paths>`; previews appear above the editor |
 | Skill/bash launcher | `!` opens skill completion; `!skill:name prompt` invokes a skill; `!omk <role-or-request>` routes through OMK role hubs |
-| Skill picker | Alt+S preserves the draft while browsing by name/description; `/skills [query]` opens the same picker |
+| Automatic skills | Ordinary prompts select relevant skills on submission; the editor previews the local choice |
+| Prompt completion | Pause at the end of a draft to preview a model-generated suffix; Tab accepts it without submitting |
+| Skill picker | Optional override: Alt+S preserves the draft while browsing; `/skills [query]` opens the same picker |
 | Shell command | `! command` runs and sends output to the model |
 | Hidden shell command | `!! command` runs without sending output to the model |
 | External editor | Ctrl+G opens `$VISUAL` or `$EDITOR` |
 
 See [Keybindings](keybindings.md) for all shortcuts and customization.
+
+### Prompt completion preview
+
+At the end of an ordinary draft, dim ghost text and a short `tab complete → ...` line preview a continuation. **Tab** appends it as one undoable edit; **Escape** dismisses the preview; **Enter** still submits only the current text and never silently accepts a preview. Slash/skill menus, file paths and `@` references retain their existing Tab behavior. Moving the cursor, changing text, opening another UI, changing session/model or stopping the UI invalidates stale results. Images remain attached.
+
+Completion uses the current model and its configured auth/headers in an isolated, tool-free request containing only the draft, not the transcript, skills or image bytes. It may incur provider charges, including for text you never submit; it does not appear as a normal session turn. The editor waits 800 ms, requires at least 12 characters, bounds input to 4,096 characters and suffixes to 320 characters, allows at most one request per 10 seconds and 20 requests per TUI lifetime, and uses a 128-output-token ceiling with an 8-second abort and no SDK retries. Providers may enforce a different token ceiling. Credential-shaped drafts and unsafe/control-character responses are rejected. Agent-style APIs such as Cursor/Devin do not participate; failures leave the original draft untouched.
+
+Set `OMK_PROMPT_COMPLETION=0` to disable generation. `--offline`/`OMK_OFFLINE` also disables it. Local automatic skill routing remains available independently. The default editor and custom editors inheriting `CustomEditor` can display/accept previews; arbitrary replacement editors keep their own completion behavior. Core changes require restarting the source runtime, not merely `/reload`.
 
 ### Images and screenshots in the prompt
 

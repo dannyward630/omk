@@ -168,6 +168,7 @@ import { TreeSelectorComponent } from "./components/tree-selector.ts";
 import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
 import { pinnedRailNotice, railFits } from "./layout-class.ts";
+import { PromptAssistance } from "./prompt-assistance.ts";
 import { formatResourceDescription } from "./resource-description.ts";
 import { createSkillPickerForDraft } from "./skill-picker-draft.ts";
 import {
@@ -271,6 +272,7 @@ export class InteractiveMode {
 	private editor: EditorComponent;
 	private editorComponentFactory: EditorFactory | undefined;
 	private autocompleteProvider: AutocompleteProvider | undefined;
+	private promptAssistance: PromptAssistance | undefined;
 	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
 	private fdPath: string | undefined;
 	private editorContainer: Container;
@@ -445,6 +447,11 @@ export class InteractiveMode {
 			paddingX: editorPaddingX,
 			autocompleteMaxVisible,
 		});
+		this.promptAssistance = new PromptAssistance(
+			() => this.session,
+			() => this.ui.requestRender(),
+		);
+		this.defaultEditor.setPromptAssistance(this.promptAssistance);
 		this.defaultEditor.setPlaceholder(EDITOR_PLACEHOLDER);
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
@@ -2543,6 +2550,7 @@ export class InteractiveMode {
 		if (factory) {
 			// Create the custom editor with tui, theme, and keybindings
 			const newEditor = factory(this.ui, getEditorTheme(), this.keybindings);
+			if (newEditor instanceof CustomEditor) newEditor.setPromptAssistance(this.promptAssistance);
 
 			// Wire up callbacks from the default editor
 			newEditor.onSubmit = this.defaultEditor.onSubmit;
@@ -6496,6 +6504,7 @@ export class InteractiveMode {
 			this.loadingAnimation = undefined;
 		}
 		this.clearExtensionTerminalInputListeners();
+		this.promptAssistance?.dispose();
 		this.attachmentDraft?.dispose();
 		for (const child of this.attachmentStripContainer?.children ?? []) disposeComponent(child);
 
