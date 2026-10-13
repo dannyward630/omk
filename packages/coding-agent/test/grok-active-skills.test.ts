@@ -108,7 +108,7 @@ describe("Grok turn-scoped active skills", () => {
 		}
 	});
 
-	it("does not auto-activate skills for another provider", async () => {
+	it("uses provider-neutral automatic routing for another provider", async () => {
 		vi.stubEnv("OMK_GROK_HARNESS", "1");
 		const harness = await createHarness({
 			resourceLoader: createSkillLoader([createSkill("programming", "Quantum frobnicator calibration")]),
@@ -123,7 +123,8 @@ describe("Grok turn-scoped active skills", () => {
 
 		try {
 			await harness.session.prompt("calibrate the quantum frobnicator");
-			expect(activeSection(providerPrompt)).toBe("");
+			expect(activeSection(providerPrompt)).toContain('source="automatic"');
+			expect(activeSection(providerPrompt)).toContain("<name>programming</name>");
 		} finally {
 			vi.unstubAllEnvs();
 			harness.cleanup();

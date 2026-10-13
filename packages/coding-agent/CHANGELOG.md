@@ -4,6 +4,7 @@
 
 ### Added
 
+- Provider-neutral automatic skill routing from each ordinary top-level prompt, using the existing bounded relevance/confidence selector and Korean intent hints. The editor previews the selected names; submission applies guidance without a launcher or Tab. Explicit-only skills, manual selections, provider harness boundaries and the frozen system prefix remain respected. Disable the general router with `OMK_AUTO_SKILLS=0`.
 - Searchable skill picker via `/skills [query]` and configurable `Alt+S` (`app.skills.select`). Search names and descriptions, preview source/location and explicit-only status, and insert one invocation without submitting or losing text/images. Selection replaces an existing leading skill; cancellation preserves the draft. Uses discovered metadata and existing TUI components, without changing persistent activation or adding dependencies. See [skill picker](docs/skills.md#searchable-skill-picker).
 - Prompt image file attachment via `/attach add <paths>`, `/attach paste` and complete bracketed-paste file drops. Quoted/escaped multi-file paths and local file URIs attach without replacing the question; remote URLs stay unsupported. `/attach` is discoverable in slash completion. Acquisition is bounded and serialized, loading blocks submit, and failed batches retain the existing draft. See [prompt images](docs/usage.md#images-and-screenshots-in-the-prompt).
 

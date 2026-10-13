@@ -48,7 +48,7 @@ function input(overrides: Partial<PromptSkillTurnInput> & { query?: string } = {
 		budgetQuery: query,
 		contextPressure: () => false,
 		contextBudget: () => undefined,
-		env: {},
+		env: { OMK_AUTO_SKILLS: "0" },
 		now: () => 1,
 		...overrides,
 	};
@@ -274,7 +274,7 @@ describe("PromptSkillFreeze skill-search setup (spec 050 R1/R2, #122 review)", (
 		const freeze = new PromptSkillFreeze();
 		freeze.skillSearch.setup({ skills, hasReadTool: true, env: ON, agentDir });
 		expect(freeze.skillSearch.active).toBe(true);
-		const turn = await freeze.turn(input({ env: ON }));
+		const turn = await freeze.turn(input({ env: { ...ON, OMK_AUTO_SKILLS: "0" } }));
 		expect(turn.messages).toEqual([]);
 		expect(reads).toBeGreaterThan(1);
 	});

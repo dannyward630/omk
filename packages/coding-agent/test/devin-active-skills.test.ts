@@ -73,8 +73,9 @@ describe("Devin SWE-2 turn-scoped active skills", () => {
 		}
 	});
 
-	it("stays inactive when OMK_DEVIN_HARNESS is off", async () => {
+	it("stays inactive when provider and general automatic routing are both off", async () => {
 		vi.stubEnv("OMK_DEVIN_HARNESS", "0");
+		vi.stubEnv("OMK_AUTO_SKILLS", "0");
 		const harness = await createHarness({
 			provider: "devin",
 			models: [{ id: "swe-2" }],

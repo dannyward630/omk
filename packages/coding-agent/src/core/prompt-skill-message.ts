@@ -10,6 +10,7 @@
 
 import { createHash } from "node:crypto";
 import { type ActiveSkillState, addActiveSkills } from "./active-skill-state.ts";
+import { automaticSkills } from "./automatic-skills.ts";
 import { scoreSkillRelevance } from "./context-budget-relevance.ts";
 import { escapeXml } from "./context-budget-system-prompt-items.ts";
 import { devinHarnessAutoApplyEnabled, isDevinProvider, selectDevinHarnessSkills } from "./devin-harness.ts";
@@ -82,7 +83,15 @@ export class PromptSkillFreeze {
 	private planTurn(input: PromptSkillTurnInput): PromptSkillTurn {
 		const env = input.env ?? process.env;
 		const harness = selectProviderHarnessSkills(input, env);
-		const current = harness ? addActiveSkills(input.selection, harness.names, harness.source) : input.selection;
+		const providerChoice = harness
+			? addActiveSkills(input.selection, harness.names, harness.source)
+			: input.selection;
+		const automatic =
+			harness !== undefined || explicitSkillNames(input).length > 0
+				? []
+				: automaticSkills(input.harnessQuery, input.skills, env).selected.map((skill) => skill.name);
+		const current = addActiveSkills(providerChoice, automatic, "automatic");
+		const systemChoice = this.skillSearch.active ? providerChoice : current;
 		const keep =
 			this.frozen !== undefined &&
 			(this.frozen.base === input.base || this.skillSearch.active) &&
@@ -93,8 +102,8 @@ export class PromptSkillFreeze {
 				: {
 						base: input.base,
 						defaults: input.defaults,
-						names: current.names,
-						source: current.source,
+						names: systemChoice.names,
+						source: systemChoice.source,
 						budgetQuery: input.budgetQuery,
 					};
 		const first = !keep;
@@ -105,7 +114,7 @@ export class PromptSkillFreeze {
 			activeSkillNames: frozen.names,
 			activeSkillSource: frozen.source,
 		};
-		if (first) return { options, messages: [] };
+		if (first && !this.skillSearch.active) return { options, messages: [] };
 		const activeChanged = !sameChoice(frozen, current);
 		// In skill-search mode the budget renders no skill list, so there is nothing to supersede (R6).
 		const relevant =
@@ -114,7 +123,7 @@ export class PromptSkillFreeze {
 				: [];
 		if (!activeChanged && relevant.length === 0) return { options, messages: [] };
 		const active = activeChanged ? resolveSkills(input.skills, current.names) : undefined;
-		if (active) logMove(harness?.source ?? "explicit", active, env);
+		if (active) logMove(harness?.source ?? (automatic.length > 0 ? "automatic" : "explicit"), active, env);
 		if (relevant.length > 0) logMove("context-budget", relevant, env);
 		const message: CustomMessage = {
 			role: "custom",
@@ -199,7 +208,8 @@ export function renderPromptSkillsMessage(
 		if (active.length === 0) lines.push("No skills are active for this prompt.");
 		for (const skill of active) {
 			lines.push(`  <name>${escapeXml(skill.name)}</name>`);
-			if (skill.disableModelInvocation) lines.push(`  <location>${escapeXml(skill.filePath)}</location>`);
+			if (skill.disableModelInvocation || source?.split("+").includes("automatic"))
+				lines.push(`  <location>${escapeXml(skill.filePath)}</location>`);
 		}
 		lines.push("</active_skills>");
 	}
@@ -222,7 +232,7 @@ export function renderPromptSkillsMessage(
 
 /** Spec 050 R8 `harness-move`: hashes and counts only. */
 function logMove(
-	source: HarnessSource | "explicit" | "context-budget",
+	source: HarnessSource | "automatic" | "explicit" | "context-budget",
 	skills: readonly Skill[],
 	env: NodeJS.ProcessEnv,
 ) {

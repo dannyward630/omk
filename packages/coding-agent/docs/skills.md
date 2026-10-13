@@ -166,6 +166,12 @@ Toggle skill commands via `/settings` in interactive mode or in `settings.json`:
 }
 ```
 
+### Automatic per-prompt skill routing
+
+Ordinary top-level prompts now select up to three relevant discovered skills automatically, regardless of provider. No launcher, picker or Tab confirmation is required. For catalogs larger than 64 entries, the local algorithm first narrows to 64 exact BM25 candidates, then reuses name-weighted token coverage and the existing confidence thresholds, scores the whole prompt plus up to four task clauses so a verification clause does not dilute the main task, adds bounded Korean intent hints and domain labels, and removes content-identical aliases. Empty/unrelated prompts select nothing; explicit-only skills stay excluded. This is deterministic lexical routing, not a semantic model: the large-catalog prefilter can miss synonyms absent from the metadata. Routing examines at most 4,096 query characters and 5,000 distinct eligible skills. Explicit prompt selections take precedence, and the existing Grok/Devin harnesses retain their narrower selection boundary.
+
+The editor shows `Auto skills: ...` while composing. This is guidance, not execution permission: full skill instructions remain read-on-use and tool/sandbox policy stays unchanged. Every top-level prompt is rescored from the current inventory. The first selection is frozen into the session's system prefix; later changes use the existing hidden per-prompt message rather than rewriting that prefix. In opt-in skill-search mode, automatic choices go into that message even on the first prompt, keeping the fixed search-mode prefix unchanged. `/reload` refreshes the inventory. Set `OMK_AUTO_SKILLS=0` to disable the general router; provider harness flags remain separate.
+
 ### Searchable skill picker
 
 Run `/skills` or `/skills <query>` to browse the current session's discovered skills. Press **Alt+S** while composing a question to open the same picker without clearing the draft. The shortcut is configurable as `app.skills.select`; `/skills` remains available when the terminal reserves that key.
