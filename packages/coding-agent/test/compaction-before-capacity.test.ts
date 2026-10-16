@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "omk-agent-core";
+import type { AgentMessage, AgentTool } from "omk-agent-core";
 import { type AssistantMessage, createAssistantMessageEventStream } from "omk-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
@@ -138,6 +138,75 @@ describe("auto-compaction before input capacity rejection", () => {
 			expect(records[0]).toMatchObject({ trigger: "estimate" });
 			expect(records[0].estimatedTokens).toBeGreaterThan(records[0].usageTokens);
 			expect(typeof records[0].usageTokens).toBe("number");
+		} finally {
+			delete process.env.OMK_RUN_LOG_DIR;
+			rmSync(dir, { recursive: true, force: true });
+		}
+	}, 60_000);
+
+	it("measures a resumed history before the first admission (default counter, not 0)", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "omk-060-resume-"));
+		process.env.OMK_RUN_LOG_DIR = dir;
+		try {
+			h = createHarness({
+				contextWindow: 64_000,
+				baseToolsOverride: { out: outputTool("small") },
+				responses: ["ok"],
+			});
+			answerSummaries(h, false);
+			// Resumed transcript: ~36k estimated tokens of tool output, provider usage reported as 100.
+			const usage = {
+				input: 100,
+				output: 1,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 101,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			};
+			const resumed: AgentMessage[] = [];
+			for (let i = 0; i < 5; i++) {
+				resumed.push({ role: "user", content: [{ type: "text", text: `turn ${i}` }], timestamp: i });
+				resumed.push({
+					role: "assistant",
+					content: [{ type: "toolCall", id: `r${i}`, name: "out", arguments: {} }],
+					api: fauxModel.api,
+					provider: fauxModel.provider,
+					model: fauxModel.id,
+					usage,
+					stopReason: "toolUse",
+					timestamp: Date.now(),
+				} as AgentMessage);
+				resumed.push({
+					role: "toolResult",
+					toolCallId: `r${i}`,
+					toolName: "out",
+					content: [{ type: "text", text: "x".repeat(26_500) }],
+					isError: false,
+					timestamp: i,
+				} as AgentMessage);
+				resumed.push({
+					role: "assistant",
+					content: [{ type: "text", text: "ok" }],
+					api: fauxModel.api,
+					provider: fauxModel.provider,
+					model: fauxModel.id,
+					usage,
+					stopReason: "stop",
+					timestamp: Date.now(),
+				} as AgentMessage);
+			}
+			for (const message of resumed) h.sessionManager.appendMessage(message as never);
+			h.agent.state.messages = resumed;
+			await h.session.prompt("resume");
+			expect(h.eventsOfType("compaction_end").map((e) => e.errorMessage ?? "ok")).toEqual(["ok"]);
+			const records = readFileSync(join(dir, "compaction-trigger.jsonl"), "utf8")
+				.trim()
+				.split("\n")
+				.map((line) => JSON.parse(line));
+			// The pre-prompt check (agent-session `_checkCompaction(lastAssistant, false)`) runs before
+			// admit(); it must still see the history through admission's default counter.
+			expect(records[0]).toMatchObject({ trigger: "estimate", usageTokens: 101 });
+			expect(records[0].estimatedTokens).toBeGreaterThan(30_000);
 		} finally {
 			delete process.env.OMK_RUN_LOG_DIR;
 			rmSync(dir, { recursive: true, force: true });

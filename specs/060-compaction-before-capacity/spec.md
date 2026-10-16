@@ -49,7 +49,15 @@ description: "턴 뒤 임계값 컴팩션이 마지막 응답 usage만 보고 �
 5. **run log**: 컴팩션이 일어나면 `compaction-trigger.jsonl`에 `trigger`와 `usageTokens`, `estimatedTokens` 두 값이 남는다. 재현 시나리오에서는 `trigger: "estimate"`이고 `estimatedTokens > usageTokens`다.
 6. **반스래시**: 재현 시나리오 16턴 동안 컴팩션 시작 ≤ 3회. 수정 후 실측은 2회(턴 6, 12)이고, 상한은 실측 + 1이다.
 7. typecheck와 lint는 저장소 pre-commit(`npm run check`)을 통과한다.
-8. (후속, 박스가 조용할 때) `bench-mem` 큰 출력 워크로드(1M 창, 200턴)가 5/5 완주한다.
+8. **재개한 세션**: 첫 `admit()` 전에 도는 프롬프트 전 검사(`_checkCompaction(lastAssistant, false)`)에서도 추정치가 0이 아니다. admission의 기본 counter(fallback)로 센다. run log에 `trigger: "estimate"`이고 `estimatedTokens > 30,000`, 컴팩션이 성공한다.
+9. `bench-mem` 큰 출력 워크로드(1M 창, 200턴)가 5/5 완주한다. 같은 시간대에 다른 팀원의 벤치나 테스트가 돌지 않아야 하고, load1을 기록한다.
+   결과(2026-10-16, 요약 요청에는 정상 요약으로 답하는 가짜 모델): 수정 후 5/5 완주, 회당 컴팩션 2회, 실패 0, load1 1.80/2.40/2.30/2.88/3.29(다른 팀 벤치·vitest는 돌지 않았고 브라우저 부하만 있었다). 참고로 main도 요약이 정상이면 1/1 완주했다(하드 상한에서 비상 컴팩션 1회). 수정의 차이는 AC 2처럼 비상 컴팩션이 실패할 때 드러난다.
+
+### usage 대비 추정치 비율 (Tech Lead MAJOR)
+
+R1은 `max(usage, 추정치)`라서, 추정치가 실제 usage보다 크게 나오면 정상 세션도 일찍 컴팩션한다. 실제 provider 세션에서 `추정치 / (input + cacheRead + cacheWrite)`의 중앙값이 1.1 이하이고 p90이 1.25 이하여야 한다. 넘으면 `usage + 마지막 usage 뒤에 붙은 메시지의 추정치`(usage가 없으면 전체 추정치)로 바꾼다.
+
+2026-10-16 현재 박스에는 **실제 provider 세션 데이터가 없다**. `~/.omk/agent/sessions`의 세션 파일 763개는 모두 테스트가 만든 것이다(assistant 응답의 provider/model이 `faux/faux-1`, `faux/faux-2`, `anthropic/test`뿐이다). `llm-call*.jsonl` run log도 없다. 그래서 이 비율은 아직 재지 못했고, 머지 전에 실제 세션(예: `OMK_RUN_LOG_DIR`를 켠 실제 provider 세션 몇 개)으로 재야 한다.
 
 ## 측정: 추정 비용
 
