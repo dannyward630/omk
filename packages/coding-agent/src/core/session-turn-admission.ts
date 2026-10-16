@@ -3,7 +3,9 @@ import type { Api, Model } from "omk-ai";
 import type { CompactionSettings } from "./compaction/compaction-headroom.ts";
 import { createTokenCounterForMode, type TokenCounterAdapter } from "./context-budget-token-counter.ts";
 import { admissionKey } from "./performance-upgrade/admission-key.ts";
+import { estimateContextInputTokens } from "./prompt-budget.ts";
 import { serializePromptToolSchemas } from "./prompt-tool-projection.ts";
+import { appendRunLog } from "./run-log.ts";
 import { admitSessionInput, sessionInputTokenLimit } from "./session-input-admission.ts";
 import {
 	describeWithheldToolGroups,
@@ -43,6 +45,7 @@ export class SessionTurnAdmission {
 	private fitted?: { readonly key: string; readonly withheld: ReadonlySet<string> };
 	private announced = "";
 	private counterEpoch = 0;
+	private thresholdMeasure?: { readonly usageTokens: number; readonly estimatedTokens: number };
 
 	constructor(host: SessionTurnAdmissionHost) {
 		this.host = host;
@@ -87,6 +90,51 @@ export class SessionTurnAdmission {
 			this.announce(modelName, budgetTokens, fit.withheld);
 		}
 		return withoutGroups(tools, groupOf, this.fitted.withheld);
+	}
+
+	/**
+	 * Threshold-compaction size after a reply (spec 060). Reported usage excludes tool results appended
+	 * after the reply, so take the larger of it and the input counted with admission's counter.
+	 */
+	thresholdContextTokens(usageTokens: number): number {
+		const model = this.host.model();
+		const state = this.host.state();
+		const estimatedTokens = model
+			? estimateContextInputTokens({
+					systemPrompt: state.systemPrompt,
+					messages: state.messages,
+					tools: state.tools,
+					modelId: model.id,
+					tokenCounter: this.counter,
+				}).localTokens
+			: 0;
+		this.thresholdMeasure = { usageTokens, estimatedTokens };
+		return Math.max(usageTokens, estimatedTokens);
+	}
+
+	/** Logs which measure triggered a threshold compaction to `compaction-trigger.jsonl`, then forgets it. */
+	recordCompactionDecision<T extends { readonly compact: boolean; readonly emergency: boolean }>(
+		decision: T,
+		contextTokens: number,
+		contextWindow: number,
+	): T {
+		const measure = this.thresholdMeasure;
+		this.thresholdMeasure = undefined;
+		if (!decision.compact) return decision;
+		const trigger = !measure
+			? "error-estimate"
+			: measure.estimatedTokens > measure.usageTokens
+				? "estimate"
+				: "usage";
+		appendRunLog("compaction-trigger", {
+			trigger,
+			usageTokens: measure?.usageTokens ?? null,
+			estimatedTokens: measure?.estimatedTokens ?? null,
+			contextTokens,
+			contextWindow,
+			emergency: decision.emergency,
+		});
+		return decision;
 	}
 
 	/** Rejects the turn only when neither the tool fit nor one compaction brings it under the ceiling. */

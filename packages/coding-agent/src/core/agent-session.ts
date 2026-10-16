@@ -3946,10 +3946,10 @@ export class AgentSession {
 			}
 			contextTokens = estimate.tokens;
 		} else {
-			contextTokens = calculateContextTokens(assistantMessage.usage);
+			contextTokens = this._turnAdmission.thresholdContextTokens(calculateContextTokens(assistantMessage.usage));
 		}
 		const decision = this._runtimeCompactionDecision(contextTokens, contextWindow, settings);
-		if (decision.compact) {
+		if (this._turnAdmission.recordCompactionDecision(decision, contextTokens, contextWindow).compact) {
 			return this._runThresholdCompaction(decision.emergency);
 		}
 		return false;
