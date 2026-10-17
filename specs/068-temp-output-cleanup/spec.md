@@ -44,8 +44,9 @@ D. **Keep files referenced by a live session**: never delete a path that a persi
    workers).
 2. Persisted sessions keep today's behaviour. Moving their bash spills into `<session>.artifacts/` (option D) is a
    **separate spec, out of scope**. So are `omk-spill-*` read spills (`artifact-spill.ts:22`).
-3. Startup sweep (C): strict pattern + uid + regular file + **24 h by mtime**, **once per day** via a stamp file in
-   the agent dir, **no size cap**. Runs in every mode, including the interactive TUI, where it runs **asynchronously
+3. Startup sweep (C): strict pattern + uid + regular file + **24 h by mtime**, **once per day** via the stamp file
+   `<agentDir>/temp-output-sweep.stamp` (if the agent dir is read-only, the sweep is skipped), **no size cap**. No lock:
+   two processes starting together may both sweep, which is harmless because only files older than 24 h are touched. Runs in every mode, including the interactive TUI, where it runs **asynchronously
    after the first render and never blocks startup**.
 4. Long-running workers: a timer **touches (updates mtime of) this process's registered files every 1 hour**, so other
    processes' sweeps keep them. Timer based, not on write; registered files only; the timer is `unref()`ed.
@@ -117,6 +118,5 @@ Do **not** manually delete the existing ~265 MB of `omk-*.log` in the shared `/t
 ## Open questions
 Resolved by Tech Lead (2026-10-17): default off; 24 h / daily stamp / no size cap; hourly touch timer for registered
 files; persisted-session bash spills and read spills are separate specs; the TUI sweep is async after the first render;
-lands after 066. Remaining:
-- Stamp file location and name (proposed `<agentDir>/temp-output-sweep.stamp`), and behaviour when the agent dir is
-  read-only (skip the sweep).
+lands after 066; stamp at `<agentDir>/temp-output-sweep.stamp`, skip when the agent dir is read-only, no lock
+(concurrent sweeps are harmless under the 24 h rule). No open questions remain.
