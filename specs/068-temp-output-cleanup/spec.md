@@ -1,6 +1,6 @@
 # Spec 068: clean up full-output temp files (bash + MCP no-session spill) (1.4.4)
 
-Status: draft, spec only, no implementation. Base: origin/main `fd495fd77b`. **Depends on 066**
+Status: spec only, Tech Lead decisions applied (2026-10-17). No implementation yet. **Lands after 066 merges.** Base: origin/main `fd495fd77b`. **Depends on 066**
 (`harness/066-tool-output-truncation`, not merged yet), which adds the MCP no-session spill
 `<tmpdir>/omk-mcp-<16 hex>.log`. Spec number: 066 and 067 are taken by local branches; 068 is free in all worktrees and branches.
 
@@ -39,45 +39,84 @@ C. **Startup sweep**: at startup, delete files in `os.tmpdir()` that match exact
 D. **Keep files referenced by a live session**: never delete a path that a persisted session still references.
    Either move it into `<session>.artifacts/` (as 066 does for MCP) or skip it in A/B/C while the session file exists.
 
-## Recommendation
-**A + C, with D for persisted sessions:**
-1. Registry + delete on exit (A) only for files created while the session is **not persisted** (`--no-session`, print
-   or json workers). Nothing can reference those paths after the process is gone.
-2. For persisted sessions, keep today's behaviour in 068 (the path is in the transcript and a resumed session may
-   `read` it). Moving bash spills into `<session>.artifacts/` (D) is a follow-up spec.
-3. Startup sweep (C) with the strict pattern + uid + age rule, rate-limited to once per day via a stamp file in the
-   agent dir, so SIGKILL and crash leftovers are bounded too.
+## Decision (Tech Lead)
+1. Registry + delete on exit (A) for files created while the session is **not persisted** (`--no-session`, print/json
+   workers).
+2. Persisted sessions keep today's behaviour. Moving their bash spills into `<session>.artifacts/` (option D) is a
+   **separate spec, out of scope**. So are `omk-spill-*` read spills (`artifact-spill.ts:22`).
+3. Startup sweep (C): strict pattern + uid + regular file + **24 h by mtime**, **once per day** via a stamp file in
+   the agent dir, **no size cap**. Runs in every mode, including the interactive TUI, where it runs **asynchronously
+   after the first render and never blocks startup**.
+4. Long-running workers: a timer **touches (updates mtime of) this process's registered files every 1 hour**, so other
+   processes' sweeps keep them. Timer based, not on write; registered files only; the timer is `unref()`ed.
+5. Lands after 066 merges (the MCP temp files only exist with 066).
+
+## Implementation constraints
+- **No new dependencies** (no `tmp`, `tmp-promise`, `signal-exit`; Library Scout). Use `fs.unlinkSync`, the strict
+  anchored regex `^omk-(bash|mcp)-[0-9a-f]{16}\.log$`, and `fs.lstatSync`.
+- Hook into the existing signal handling (`core/session-termination.ts:107`, `modes/rpc/rpc-mode.ts:350-359`,
+  `modes/acp/acp-mode.ts:27-28`) plus one `process.on("exit")` listener. Do not add new signal handlers that change
+  how a signal ends the process.
 
 ## Safety rules
 - Delete only paths this process created and registered (A), or files matching the strict pattern, owned by our uid,
   regular, and older than the threshold (C). Never a glob like `omk-*.log`; never follow symlinks (`lstat`).
 - Model-read race: a file must stay while the process (or session) that put its path in a tool result is alive.
-  A deletes only at exit; C only touches files older than the threshold, so a file in use by another live
-  `--no-session` process (younger than 24 h) survives. Open question: long-running workers older than the threshold.
+  A deletes only at exit. C only touches files older than 24 h, and a live process re-touches its registered files every
+  hour, so another live process's files never reach the threshold.
+- Decisions use `lstat`, never follow symlinks, and skip files of a different uid and non-regular files.
 - Exit handler is synchronous, best effort, swallows errors, and never changes the exit code.
 - The `!` bash `discardTempFile` path stays as it is.
 
-## Flag plan
-Behaviour change → propose default-off `OMK_TEMP_OUTPUT_CLEANUP=1` (enables A and C); Tech Lead decides the default.
-Unset or `0`: byte-identical to today (same files created, none deleted).
+## Risks
+- **The uid check filters nothing on this box.** Every agent runs as the same uid (`box`), so "owned by our uid" is
+  true for every agent's files. The real protection is the 24 h threshold plus the hourly touch of live files plus
+  criterion 7. The uid and regular-file checks still protect multi-user hosts and odd entries (criterion 8).
+- SIGKILL, OOM kills and crashes skip the exit handler (Node can't catch them); their files wait for the next daily
+  sweep after 24 h.
+- A process that is suspended for more than 24 h (SIGSTOP, laptop sleep) misses its touch ticks, so another process's
+  sweep could delete its files. Accepted; the model can rerun the command.
+- `os.tmpdir()` differs per process when `TMPDIR` differs; each process only sweeps its own `os.tmpdir()`.
+
+## Prior art (Agent Researcher)
+- Claude Code: startup cleanup of old tool-result and session files by age, `cleanupPeriodDays` (default 30).
+  https://code.claude.com/docs/en/settings-reference, https://github.com/anthropics/claude-code/issues/38576
+- Node.js: `exit` listeners must be synchronous, and SIGKILL can't be caught (hence the sync `unlinkSync` plus the sweep).
+  https://nodejs.org/api/process.html
+- wrangler added a startup sweep after SIGKILL leftovers. https://github.com/cloudflare/workers-sdk/issues/13872
+- Anchored, fixed-length-hex regex for safe temp matching. https://github.com/bloknayrb/tandem/pull/872
+
+## Flag plan (decided)
+Default **off**: `OMK_TEMP_OUTPUT_CLEANUP=1` enables A, C and the touch timer. Unset or `0`: byte-identical to today
+(same files created, none deleted, no exit handler, no timer, no sweep). Flipping the default to on is a separate,
+later PR, after one release with the flag.
 
 ## Success criteria (fixed before any measurement)
-Mock setup as Bench Analyst run2 (`--no-session -p --mode json`, mock LLM + MCP server, outputs over the cap for
-both bash and MCP), n = 20 runs per arm, flag on:
-1. Leftover files matching `^omk-(bash|mcp)-[0-9a-f]{16}\.log$` created by the runs: **0** (before/after diff of `$TMPDIR`).
+OMK rule: every mock run and decoy test uses a **per-run private `TMPDIR`** (shared `/tmp` is used by all agents).
+Mock setup as Bench Analyst run2 (`--no-session -p --mode json`, mock LLM + MCP server, outputs over the cap for both
+bash and MCP), n = 20 runs per arm, flag on:
+1. Files created by this run: **0 left** after it exits (before/after diff of its private `TMPDIR`). Other runs'
+   leftovers are the sweep's job (C).
 2. Mid-output fact recovery via `read` of the spilled path: **20/20** (same as 066 run2). The file exists while the run uses it.
 3. SIGINT and SIGTERM during a run after a spill: **0** leftovers in 20 runs each.
-4. SIGKILL leftovers: removed by the next startup sweep only when older than the threshold. A fresh one (< threshold) survives (tests with faked mtime).
-5. Decoys untouched: `omk-build.log`, `omk-bash-xyz.log` (bad hex), a symlink matching the pattern, a file owned by another uid (if testable), and a matching file younger than the threshold are all kept.
+4. SIGKILL leftovers: removed by the next startup sweep only when older than 24 h. A fresh one survives (faked mtime).
+5. Decoys untouched: `omk-build.log`, `omk-bash-xyz.log` (bad hex), and a matching file younger than 24 h are kept.
 6. Persisted-session runs: spilled files referenced by the session are kept (count unchanged vs main).
-7. Flag off: file creation and deletion counts identical to main; no exit handler installed.
-8. Full suite green; paired `--noreg` A/B (Bench Analyst) on success / ctx / wall time.
+7. Two concurrent processes **under the same uid** (as on this box), sharing one private `TMPDIR`: process 1 holds registered spill files (mtime faked to > 24 h
+   before its touch tick, then touched). Process 2's startup sweep must not delete process 1's live files (test).
+8. Sweep decisions use `lstat`: a symlink matching the pattern (pointing at a real old file) is neither followed nor
+   its target deleted; files of a different uid (when testable) and non-regular files (directory/FIFO with a
+   matching name) are skipped (test).
+9. Flag off: file creation and deletion counts identical to main; no exit handler, timer or sweep installed.
+10. TUI: the sweep runs after the first render and never blocks startup (first-frame time unchanged within noise,
+    paired A/B).
+11. Full suite green; paired `--noreg` A/B (Bench Analyst) on success / ctx / wall time.
 
-## Open questions for Tech Lead
-1. Default: off (`OMK_TEMP_OUTPUT_CLEANUP=1` to enable) or on with `=0` to roll back?
-2. Sweep threshold and cap: 24 h by mtime? Plus a size cap (e.g. newest 200 MB kept)? Once per day via a stamp file?
-3. Long-running `--no-session` workers (> threshold): touch (update mtime of) registered files periodically so another process's sweep keeps them, or accept the risk?
-4. Persisted sessions: leave bash spills in `$TMPDIR` as today, or move them into `<session>.artifacts/` (option D) in 068?
-5. Include `omk-spill-*` read-spill directories (`artifact-spill.ts:22`) in 068, or a separate spec?
-6. Should the sweep also run for the interactive TUI, or only for print/json/rpc modes?
-7. Land after 066 merges (MCP temp files only exist with 066), or merge with bash-only support first?
+Do **not** manually delete the existing ~265 MB of `omk-*.log` in the shared `/tmp` before the flag merges.
+
+## Open questions
+Resolved by Tech Lead (2026-10-17): default off; 24 h / daily stamp / no size cap; hourly touch timer for registered
+files; persisted-session bash spills and read spills are separate specs; the TUI sweep is async after the first render;
+lands after 066. Remaining:
+- Stamp file location and name (proposed `<agentDir>/temp-output-sweep.stamp`), and behaviour when the agent dir is
+  read-only (skip the sweep).
