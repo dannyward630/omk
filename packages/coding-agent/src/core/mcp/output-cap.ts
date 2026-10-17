@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { ImageContent, TextContent } from "omk-ai";
 import { sessionArtifactDir } from "../session-artifacts.ts";
+import { registerTempOutputFile } from "../temp-output-cleanup.ts";
 import { defaultTempFilePath } from "../tools/output-accumulator.ts";
 import {
 	DEFAULT_MAX_BYTES,
@@ -35,6 +36,7 @@ function spillToTemp(full: string): string {
 	const file = defaultTempFilePath("omk-mcp");
 	writeFileSync(file, full, { encoding: "utf-8", mode: 0o600, flag: "wx" });
 	chmodSync(file, 0o600);
+	registerTempOutputFile(file, { persisted: false });
 	return file;
 }
 

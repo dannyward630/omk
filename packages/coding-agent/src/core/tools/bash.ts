@@ -11,6 +11,7 @@ import {
 	getActiveRemainingBudget,
 	resolveBashTimeoutForBudget,
 } from "../remaining-budget.ts";
+import { registerTempOutputFile } from "../temp-output-cleanup.ts";
 import {
 	type BashSandboxPreflight,
 	createLocalBashOperations,
@@ -144,7 +145,12 @@ export function createBashToolDefinition(
 				}
 			}
 
-			const output = new OutputAccumulator({ tempFilePrefix: "omk-bash" });
+			const output = new OutputAccumulator({
+				tempFilePrefix: "omk-bash",
+				// Spec 068: only registered when not persisted and OMK_TEMP_OUTPUT_CLEANUP=1 (else a no-op).
+				onTempFileCreated: (path) =>
+					registerTempOutputFile(path, { persisted: ctx?.sessionManager?.getSessionFile?.() !== undefined }),
+			});
 			let updateTimer: NodeJS.Timeout | undefined;
 			let updateDirty = false;
 			let lastUpdateAt = 0;

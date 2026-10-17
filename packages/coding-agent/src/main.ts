@@ -41,6 +41,7 @@ import type { CreateAgentSessionOptions } from "./core/sdk.ts";
 import { getMissingSessionCwdIssue, MissingSessionCwdError } from "./core/session-cwd.ts";
 import { assertValidSessionId, SessionManager } from "./core/session-manager.ts";
 import { SettingsManager } from "./core/settings-manager.ts";
+import { scheduleTempOutputSweep } from "./core/temp-output-cleanup.ts";
 import { printTimings, resetTimings, time } from "./core/timings.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { settlePrintModeExit } from "./modes/print-exit-guard.ts";
@@ -860,6 +861,9 @@ export async function main(args: string[], options?: MainOptions) {
 		console.error(chalk.red("Error: OMK_STARTUP_BENCHMARK only supports interactive mode"));
 		process.exit(1);
 	}
+
+	// Spec 068: daily temp-output sweep (OMK_TEMP_OUTPUT_CLEANUP=1 only). Interactive runs it after the first render.
+	if (appMode !== "interactive") scheduleTempOutputSweep({ agentDir });
 
 	if (appMode === "rpc") {
 		printTimings();

@@ -8,6 +8,8 @@ export interface OutputAccumulatorOptions {
 	maxLines?: number;
 	maxBytes?: number;
 	tempFilePrefix?: string;
+	/** Called once with the temp file path when it is created (spec 068 cleanup registry). */
+	onTempFileCreated?: (path: string) => void;
 }
 
 export interface OutputSnapshot {
@@ -39,6 +41,7 @@ export class OutputAccumulator {
 	private readonly maxBytes: number;
 	private readonly maxRollingBytes: number;
 	private readonly tempFilePrefix: string;
+	private readonly onTempFileCreated: ((path: string) => void) | undefined;
 	private readonly decoder = new TextDecoder();
 
 	private rawChunks: Buffer[] = [];
@@ -61,6 +64,7 @@ export class OutputAccumulator {
 		this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
 		this.maxRollingBytes = Math.max(this.maxBytes * 2, 1);
 		this.tempFilePrefix = options.tempFilePrefix ?? "omk-output";
+		this.onTempFileCreated = options.onTempFileCreated;
 	}
 
 	append(data: Buffer): void {
@@ -217,6 +221,7 @@ export class OutputAccumulator {
 		this.tempFilePath = defaultTempFilePath(this.tempFilePrefix);
 		// Owner-only permissions: full output can contain secrets (env vars, tokens, etc.).
 		this.tempFileStream = createWriteStream(this.tempFilePath, { mode: 0o600 });
+		this.onTempFileCreated?.(this.tempFilePath);
 		for (const chunk of this.rawChunks) {
 			this.tempFileStream.write(chunk);
 		}
