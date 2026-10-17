@@ -240,6 +240,69 @@ export function truncateTail(content: string, options: TruncationOptions = {}): 
 	};
 }
 
+export interface HeadTailTruncationResult {
+	/** Kept start (whole lines, or a UTF-8 safe byte prefix when line 1 alone exceeds the head budget). */
+	head: string;
+	/** Kept end (from `truncateTail` on the rest). Empty when not truncated. */
+	tail: string;
+	truncated: boolean;
+	totalLines: number;
+	totalBytes: number;
+	/** Lines and bytes between head and tail that were cut. */
+	omittedLines: number;
+	omittedBytes: number;
+	maxLines: number;
+	maxBytes: number;
+}
+
+function truncateStringToBytesFromStart(str: string, maxBytes: number): string {
+	const buf = Buffer.from(str, "utf-8");
+	if (buf.length <= maxBytes) return str;
+	let end = maxBytes;
+	while (end > 0 && (buf[end] & 0xc0) === 0x80) end--;
+	return buf.subarray(0, end).toString("utf-8");
+}
+
+/**
+ * Keep the start and the end, cut the middle (spec 066, MCP output). Head and tail each get half of the line and
+ * byte limits; `head` + `tail` together stay within `maxLines` / `maxBytes`. Built on `truncateHead` / `truncateTail`.
+ */
+export function truncateHeadTail(content: string, options: TruncationOptions = {}): HeadTailTruncationResult {
+	const maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
+	const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+	const totalBytes = Buffer.byteLength(content, "utf-8");
+	const totalLines = splitLinesForCounting(content).length;
+	const base = { totalLines, totalBytes, maxLines, maxBytes };
+	if (totalLines <= maxLines && totalBytes <= maxBytes) {
+		return { ...base, head: content, tail: "", truncated: false, omittedLines: 0, omittedBytes: 0 };
+	}
+	const headLines = Math.max(1, Math.floor(maxLines / 2));
+	const headBudget = Math.floor(maxBytes / 2);
+	const headResult = truncateHead(content, { maxLines: headLines, maxBytes: headBudget });
+	const partial = headResult.firstLineExceedsLimit;
+	const head = partial ? truncateStringToBytesFromStart(content, headBudget) : headResult.content;
+	// Whole-line head: skip its trailing newline. Partial head: the rest continues mid-line.
+	const rest = content.slice(head.length + (partial || head.length === 0 ? 0 : 1));
+	const headBytes = Buffer.byteLength(head, "utf-8");
+	const tailResult = truncateTail(rest, {
+		maxLines: maxLines - headResult.outputLines,
+		maxBytes: maxBytes - headBytes,
+	});
+	const tail = tailResult.content;
+	const keptLines =
+		(partial ? 1 : headResult.outputLines) +
+		tailResult.outputLines -
+		(partial && tailResult.totalLines === 1 ? 1 : 0);
+	return {
+		...base,
+		head,
+		tail,
+		truncated: true,
+		omittedLines: Math.max(0, totalLines - keptLines),
+		omittedBytes: Math.max(0, totalBytes - headBytes - Buffer.byteLength(tail, "utf-8")),
+	};
+}
+
 /**
  * Truncate a string to fit within a byte limit (from the end).
  * Handles multi-byte UTF-8 characters correctly.

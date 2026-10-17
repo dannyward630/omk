@@ -8,8 +8,10 @@ import {
 	collectDanglingBinLinks,
 	danglingLinks,
 	evaluateTree,
+	overrideVersionFor,
 	parseTreeProblems,
 	readBaseline,
+	readRootOverrides,
 } from "../check-dep-tree.mjs";
 
 /** Workspace skeleton with the bin directories npm would materialize. */
@@ -163,5 +165,78 @@ describe("readBaseline", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+});
+
+/** The shape npm 10 emits when a stale hidden lockfile makes it ignore an override. */
+function staleOverrideTree(installed) {
+	const problem = `invalid: qs@${installed} /repo/node_modules/qs`;
+	return JSON.stringify({
+		name: "root",
+		problems: [problem],
+		dependencies: {
+			"@stryker-mutator/core": {
+				version: "10.0.0",
+				dependencies: {
+					"typed-rest-client": {
+						version: "2.3.1",
+						dependencies: {
+							qs: {
+								version: installed,
+								overridden: false,
+								invalid: '"6.15.1" from node_modules/typed-rest-client',
+								problems: [problem],
+							},
+						},
+					},
+				},
+			},
+		},
+	});
+}
+
+const strykerQsOverride = { "@stryker-mutator/core": { "typed-rest-client": { qs: "6.16.0" } } };
+
+describe("parseTreeProblems with root overrides", () => {
+	it("drops an invalid whose installed version is exactly the override for that path", () => {
+		assert.deepEqual(parseTreeProblems(staleOverrideTree("6.16.0"), strykerQsOverride), []);
+	});
+
+	it("still fails an invalid with no override", () => {
+		assert.deepEqual(parseTreeProblems(staleOverrideTree("6.16.0"), {}), ["invalid: qs@6.16.0 /repo/node_modules/qs"]);
+		assert.deepEqual(parseTreeProblems(staleOverrideTree("6.16.0")), ["invalid: qs@6.16.0 /repo/node_modules/qs"]);
+	});
+
+	it("still fails when the override exists but the installed version differs", () => {
+		assert.deepEqual(parseTreeProblems(staleOverrideTree("6.14.0"), strykerQsOverride), [
+			"invalid: qs@6.14.0 /repo/node_modules/qs",
+		]);
+	});
+
+	it("does not apply an override nested under a different parent", () => {
+		const elsewhere = { "some-other-pkg": { qs: "6.16.0" } };
+		assert.deepEqual(parseTreeProblems(staleOverrideTree("6.16.0"), elsewhere), ["invalid: qs@6.16.0 /repo/node_modules/qs"]);
+	});
+});
+
+describe("overrideVersionFor", () => {
+	it("resolves simple, nested, dot and exact-version keys", () => {
+		assert.equal(overrideVersionFor({ ws: "8.21.0" }, ["a", "ws"], "8.21.0"), "8.21.0");
+		assert.equal(overrideVersionFor(strykerQsOverride, ["@stryker-mutator/core", "typed-rest-client", "qs"], "6.16.0"), "6.16.0");
+		assert.equal(overrideVersionFor({ vite: { ".": "7.3.5" } }, ["vitest", "vite"], "7.3.5"), "7.3.5");
+		assert.equal(overrideVersionFor({ "qs@6.15.1": "6.16.0" }, ["x", "qs"], "6.15.1"), "6.16.0");
+	});
+
+	it("prefers the most deeply nested rule and ignores ranges and references", () => {
+		const overrides = { qs: "6.0.0", "typed-rest-client": { qs: "6.16.0" } };
+		assert.equal(overrideVersionFor(overrides, ["typed-rest-client", "qs"], "6.16.0"), "6.16.0");
+		assert.equal(overrideVersionFor({ "qs@^6": "6.16.0" }, ["qs"], "6.16.0"), undefined);
+		assert.equal(overrideVersionFor({ qs: "$qs" }, ["qs"], "6.16.0"), undefined);
+		assert.equal(overrideVersionFor({}, ["qs"], "6.16.0"), undefined);
+	});
+
+	it("reads the repository's own overrides", () => {
+		const overrides = readRootOverrides();
+		assert.equal(overrideVersionFor(overrides, ["@stryker-mutator/core", "typed-rest-client", "qs"], "6.16.0"), "6.16.0");
 	});
 });

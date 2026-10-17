@@ -28,8 +28,65 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const baselinePath = join(repoRoot, "scripts", "dep-tree-baseline.json");
 
-/** Parse `npm ls --json` output into the problems npm itself reports. */
-export function parseTreeProblems(jsonText) {
+/** Split an override key (`name` or `name@spec`) into its parts. Scoped names keep their leading `@`. */
+function splitOverrideKey(key) {
+	const at = key.indexOf("@", 1);
+	return at === -1 ? { name: key, spec: undefined } : { name: key.slice(0, at), spec: key.slice(at + 1) };
+}
+
+/**
+ * Whether an override key selects this installed package. Only a bare name or
+ * an exact `name@version` counts; ranged selectors are not evaluated here, so
+ * they never excuse a problem (the check stays strict rather than guessing).
+ */
+function overrideKeyMatches(key, name, version) {
+	const parsed = splitOverrideKey(key);
+	if (parsed.name !== name) return false;
+	return parsed.spec === undefined || parsed.spec === version;
+}
+
+/**
+ * The version a root `overrides` block forces on the package at `path`
+ * (dependency names from the root, last entry is the package itself), or
+ * undefined when no override applies. Follows npm's nesting: a rule nested
+ * under an ancestor applies to that ancestor's subtree, the most deeply nested
+ * matching rule wins, and an object's `"."` key overrides the ancestor itself.
+ * `$`-references are not resolved and therefore never match.
+ */
+export function overrideVersionFor(overrides, path, version) {
+	if (!overrides || typeof overrides !== "object" || path.length === 0) return undefined;
+	const target = path[path.length - 1];
+	const scopes = [overrides];
+	for (const ancestor of path.slice(0, -1)) {
+		const next = [];
+		for (const scope of scopes) {
+			for (const [key, value] of Object.entries(scope)) {
+				if (value && typeof value === "object" && splitOverrideKey(key).name === ancestor) next.push(value);
+			}
+		}
+		scopes.push(...next);
+	}
+	for (let index = scopes.length - 1; index >= 0; index -= 1) {
+		for (const [key, value] of Object.entries(scopes[index])) {
+			if (!overrideKeyMatches(key, target, version)) continue;
+			const forced = typeof value === "string" ? value : value && typeof value === "object" ? value["."] : undefined;
+			if (typeof forced === "string" && !forced.startsWith("$")) return forced;
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Parse `npm ls --json` output into the problems npm itself reports.
+ *
+ * When npm's hidden lockfile is stale (a build that links workspace packages, or
+ * vitest creating `node_modules/.vite-temp`), some npm versions re-read the tree
+ * from disk without applying root `overrides` and flag an overridden package as
+ * `invalid` against the range its parent declares. Such a problem is dropped
+ * only when the root `package.json` override for that exact dependency path
+ * forces precisely the installed version. Every other `invalid` still counts.
+ */
+export function parseTreeProblems(jsonText, overrides = {}) {
 	let tree;
 	try {
 		tree = JSON.parse(jsonText);
@@ -37,13 +94,30 @@ export function parseTreeProblems(jsonText) {
 		return ["npm ls did not return parseable JSON"];
 	}
 	const problems = [];
-	const visit = (node) => {
+	const excused = new Set();
+	const visit = (node, path) => {
 		if (!node || typeof node !== "object") return;
-		if (Array.isArray(node.problems)) problems.push(...node.problems);
-		for (const child of Object.values(node.dependencies ?? {})) visit(child);
+		if (Array.isArray(node.problems)) {
+			problems.push(...node.problems);
+			if (node.invalid && path.length > 0 && overrideVersionFor(overrides, path, node.version) === node.version) {
+				const prefix = `invalid: ${path[path.length - 1]}@${node.version} `;
+				for (const problem of node.problems) if (problem.startsWith(prefix)) excused.add(problem);
+			}
+		}
+		for (const [name, child] of Object.entries(node.dependencies ?? {})) visit(child, [...path, name]);
 	};
-	visit(tree);
-	return [...new Set(problems)];
+	visit(tree, []);
+	return [...new Set(problems)].filter((problem) => !excused.has(problem));
+}
+
+/** Root `package.json` overrides, or an empty object. */
+export function readRootOverrides(root = repoRoot) {
+	try {
+		const parsed = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+		return parsed.overrides && typeof parsed.overrides === "object" ? parsed.overrides : {};
+	} catch {
+		return {};
+	}
 }
 
 /** Bin directories npm materializes: the root one plus each workspace package's. */
@@ -127,7 +201,7 @@ export function evaluateTree(problems, dangling, baseline) {
 }
 
 export function runCli(argv = [], root = repoRoot) {
-	const problems = parseTreeProblems(readTreeJson(root));
+	const problems = parseTreeProblems(readTreeJson(root), readRootOverrides(root));
 	const dangling = collectDanglingBinLinks(root);
 
 	if (argv.includes("--update")) {

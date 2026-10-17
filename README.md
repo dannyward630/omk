@@ -500,6 +500,32 @@ Not automatically. Subagents require setup, and verification must be part of
 the chosen workflow. Its result covers the declared checks, not all behavior. See
 [what runs by default](#what-runs-by-default) and [evidence and limits](#evidence-and-limits).
 
+## Next: v1.5.0 (planned, not released)
+
+This section tracks planned work. Nothing here ships until it is merged and released, and every number below comes from mock-model A/B runs, not real models.
+
+| Item | Status | What it changes |
+| --- | --- | --- |
+| MCP tool output cap (spec 066) | Reviewed, PR pending | Large MCP results are cut to the first and last 2000 lines / 50KB, and the full text is saved to a private file (mode 0600). `OMK_MCP_OUTPUT_CAP=0` turns it off. Mock A/B: a fact at the end of a 1MB result went from 0/20 to 20/20 success. Known cost: when the fact sits in the middle, billed input tokens rise (200KB: +59%, 1MB: about 60x). |
+| Pre-commit dependency-tree hook fix | Reviewed, PR pending | Stops a false `invalid` report for the root `qs` override on npm 10.9.3. |
+| Temp output cleanup (spec 068) | Spec approved | Opt-in `OMK_TEMP_OUTPUT_CLEANUP=1` removes OMK's own saved output files on exit and in a daily startup sweep. |
+| Truncated output navigation (spec 069) | Spec drafted | Opt-in hints that point the model to `grep` the saved file before reading it in pages, aimed at the mid-output token cost above. |
+| Search, edit and read tool research | Research | Survey of current agent tools such as fff before any change to `grep`, `find`, `read` or `edit`. |
+| Prompt cache prefix measurement (spec 070) | Spec drafted | Offline measurement of how much of each request prefix stays byte-identical between turns, and what breaks it. No runtime change. |
+| Subagent runtime | Planning | Up to 4 subagents run at once; a fifth request is refused instead of queued. Each subagent gets its own git worktree. |
+| Parallel session protocol | Planning | A written contract for messages, file ownership locks, completion and failure reports, and cancel propagation between parallel sessions. |
+| Reasoning auto v5 for subagents | Planning | Builds on auto v4 after a memory and CPU baseline for subagents. |
+| Subagent loop guard and git pre-checks | Planning | Always on for subagents, with no flag. A subagent cannot start another subagent, and it stops after 3 identical calls in a row, 3 repeated errors, an A/B ping-pong, or 5 turns without progress. Before reporting done it must leave a clean `git status`, updated docs, and a conflict-free `git merge-tree` against main. |
+| Image previews and model image size (spec 075) | Planning | Tool-result images get the same 6-line, 80-column preview limit as prompt attachments, with a one-line text fallback. Images sent to the model follow the provider's documented resize rule; saved originals stay full size. |
+
+Behavior changes planned for 1.5.0: a fifth concurrent subagent request is refused with a typed `busy` error instead of waiting, and Ultra mode gets the same limit of 4 concurrent subagents.
+
+On hold:
+
+- Stryker upgrade and removing the `qs` override. The latest `@stryker-mutator/core` (10.0.0) still pins `typed-rest-client ~2.3.0`, so the override stays for now.
+- A hard limit on repeated reads of saved output. Spec 069 starts with hints only; a hard limit waits for real-model data showing hints are not enough.
+- Real-model re-measurement of timeouts and of the opt-in hints. This needs a cost approval first.
+
 ## Recent releases
 
 <details>

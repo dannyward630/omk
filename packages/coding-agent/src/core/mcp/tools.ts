@@ -16,6 +16,7 @@ import type { ImageContent, TextContent } from "omk-ai";
 import type { TSchema } from "typebox";
 import type { AgentToolResult, ToolDefinition } from "../extensions/types.ts";
 import type { McpClient, McpContentBlock, McpToolSchema } from "./client.ts";
+import { capMcpContent, mcpOutputCapEnabled } from "./output-cap.ts";
 
 /** Tool-name separator between the server label and the server's own tool name. */
 export const MCP_TOOL_NAME_SEPARATOR = "__";
@@ -132,10 +133,17 @@ export function createMcpToolDefinition(
 		parameters,
 		executionMode: "parallel",
 		...(options.toolTimeoutMs !== undefined ? { timeoutMs: options.toolTimeoutMs } : {}),
-		async execute(_toolCallId, params, signal): Promise<AgentToolResult<McpToolDetails>> {
+		async execute(toolCallId, params, signal, _onUpdate, ctx): Promise<AgentToolResult<McpToolDetails>> {
 			try {
 				const result = await client.callTool(tool.name, params, options.callTimeoutMs, signal);
-				const content = mapMcpContent(result.content);
+				const mapped = mapMcpContent(result.content);
+				const content = mcpOutputCapEnabled()
+					? capMcpContent(mapped, () => ({
+							sessionFile: ctx?.sessionManager?.getSessionFile?.(),
+							cwd: ctx?.cwd ?? process.cwd(),
+							toolCallId,
+						}))
+					: mapped;
 				return {
 					content: content.length > 0 ? content : [{ type: "text", text: "(no content)" }],
 					details: {

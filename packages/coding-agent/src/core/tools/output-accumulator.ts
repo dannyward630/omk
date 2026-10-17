@@ -17,7 +17,8 @@ export interface OutputSnapshot {
 	outputFilter?: { readonly name: "rtk"; readonly filter: "vitest" | "tsc"; readonly status: "applied" | "fallback" };
 }
 
-function defaultTempFilePath(prefix: string): string {
+/** Full-output temp file: `<tmpdir>/<prefix>-<16 hex>.log` (bash uses prefix `omk-bash`; files are created 0600). */
+export function defaultTempFilePath(prefix: string): string {
 	const id = randomBytes(8).toString("hex");
 	return join(tmpdir(), `${prefix}-${id}.log`);
 }
