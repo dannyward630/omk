@@ -58,14 +58,16 @@ D. **Keep files referenced by a live session**: never delete a path that a persi
 - Hook into the existing signal handling (`core/session-termination.ts:107`, `modes/rpc/rpc-mode.ts:350-359`,
   `modes/acp/acp-mode.ts:27-28`) plus one `process.on("exit")` listener. Do not add new signal handlers that change
   how a signal ends the process.
-- Implementation note (068 code): print/json mode has no SIGINT/SIGTERM handler, so Node's default action kills the
-  process without an `exit` event and criterion 3 would leak. With the flag on, one listener per SIGINT/SIGTERM/SIGHUP
-  is added that keeps the outcome: if another listener exists it does nothing (that handler decides; its
-  `process.exit()` reaches the exit hook, and the TUI's SIGINT-ignore keeps the process and its files alive); if it is
-  the only listener it deletes the registered files, removes itself and re-raises the same signal, so the process
-  still ends by that signal. Flag off: no listener.
+- Implementation note (068 code): signal-exit already handles signals (proper-lockfile, statically imported by
+  `settings-manager.ts` and `auth-storage.ts`, loads signal-exit 3.0.7 and installs SIGINT/SIGTERM/SIGHUP listeners
+  that re-raise the signal); we only register a cleanup function on top of it with signal-exit's `onExit`
+  (direct dependency `signal-exit` 3.0.7, the same lockfile entry proper-lockfile uses, so both share one global
+  emitter; never 4.x). No own signal listeners. The callback is fully synchronous (`fs.unlinkSync` only). `onExit` is
+  registered only when `OMK_TEMP_OUTPUT_CLEANUP=1`. This adds a direct dependency edge to an existing package (0 new
+  lockfile packages), an approved exception to "no new dependencies".
 - Registration points: bash tool (`OutputAccumulator` `onTempFileCreated`, registered only when
-  `ctx.sessionManager.getSessionFile()` is undefined) and the MCP no-session spill. The user `!` bash temp file
+  `ctx.sessionManager.getSessionFile()` is undefined; a missing ctx or sessionManager counts as persisted) and the MCP
+  no-session spill. The user `!` bash temp file
   (`core/bash-executor.ts`) is not registered (unchanged; the daily sweep covers it).
 
 ## Safety rules
