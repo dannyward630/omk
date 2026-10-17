@@ -83,6 +83,31 @@ function runChild(mode: string, tmp: string, flag: "1" | "0" = "1", extraEnv: No
 	return { child, result, ready };
 }
 
+const CHILD_WAIT_MS = 5_000;
+
+/** Bounded wait: a child that does not settle in time is SIGKILLed and the test fails (never hangs CI). */
+async function within<T>(run: ChildRun, promise: Promise<T>, what: string): Promise<T> {
+	let timer: NodeJS.Timeout | undefined;
+	const timeout = new Promise<"timeout">((resolve) => {
+		timer = setTimeout(() => resolve("timeout"), CHILD_WAIT_MS);
+	});
+	try {
+		const winner = await Promise.race([promise, timeout]);
+		if (winner === "timeout") {
+			run.child.kill("SIGKILL");
+			expect.fail(
+				`spec068 child (pid ${run.child.pid}) did not ${what} within ${CHILD_WAIT_MS} ms; killed with SIGKILL`,
+			);
+		}
+		return winner as T;
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+const ready = (run: ChildRun) => within(run, run.ready, "report its spill paths");
+const exited = (run: ChildRun, after = "exit") => within(run, run.result, after);
+
 afterEach(() => resetTempOutputCleanupForTests());
 afterAll(() => {
 	for (const d of dirs) rmSync(d, { recursive: true, force: true });
@@ -97,8 +122,8 @@ describe("spec 068 criteria 1-2: exit cleanup, recovery while alive (n=20)", () 
 			const tmp = privateDir();
 			const before = omkFiles(tmp).length;
 			const run = runChild("exit", tmp);
-			const info = await run.ready;
-			const { code } = await run.result;
+			const info = await ready(run);
+			const { code } = await exited(run);
 			expect(code).toBe(0);
 			expect(info.paths).toHaveLength(2); // one omk-bash, one omk-mcp
 			created += info.paths.length;
@@ -119,10 +144,10 @@ describe("spec 068 criterion 3: SIGINT / SIGTERM (n=20 each)", () => {
 			for (let i = 0; i < 20; i++) {
 				const tmp = privateDir();
 				const run = runChild("wait", tmp);
-				const info = await run.ready;
+				const info = await ready(run);
 				expect(info.paths.every((p) => existsSync(p))).toBe(true);
 				run.child.kill(sig);
-				const { signal } = await run.result;
+				const { signal } = await exited(run, `exit after ${sig}`);
 				if (signal === sig) bySignal++;
 				left += omkFiles(tmp).length;
 			}
@@ -139,10 +164,10 @@ describe("spec 068 criterion 3 regression: real settings-manager -> proper-lockf
 			for (const flag of ["0", "1"] as const) {
 				const tmp = privateDir();
 				const run = runChild("wait", tmp, flag, { SPEC068_LOAD_SETTINGS: "1" });
-				const info = await run.ready;
+				const info = await ready(run);
 				expect(info.paths).toHaveLength(2);
 				run.child.kill(sig);
-				const { signal } = await run.result;
+				const { signal } = await exited(run, `exit after ${sig}`);
 				out[flag] = { signal, left: omkFiles(tmp).length, listeners: info.listenerCounts };
 			}
 			expect(out["0"]!.signal).toBe(sig);
@@ -160,9 +185,9 @@ describe("spec 068 criteria 4-5, 8: startup sweep", () => {
 	it("SIGKILL leftover: removed only when older than 24 h; fresh one survives", async () => {
 		const tmp = privateDir();
 		const run = runChild("wait", tmp);
-		const info = await run.ready;
+		const info = await ready(run);
 		run.child.kill("SIGKILL");
-		await run.result;
+		await exited(run, "exit after SIGKILL");
 		expect(omkFiles(tmp)).toHaveLength(2); // SIGKILL skips the exit hook
 		const now = Date.now();
 		// One aged past 24 h, one fresh (faked mtimes).
@@ -253,8 +278,8 @@ describe("spec 068 criterion 6: persisted sessions keep today's behaviour", () =
 		for (const flag of ["1", "0"] as const) {
 			const tmp = privateDir();
 			const run = runChild("persisted", tmp, flag);
-			await run.ready;
-			await run.result;
+			await ready(run);
+			await exited(run);
 			counts.push(omkFiles(tmp).filter((n) => n.startsWith("omk-bash-")).length);
 		}
 		expect(counts).toEqual([1, 1]);
@@ -267,13 +292,13 @@ describe("spec 068 criterion 7: concurrent process, same uid, shared private TMP
 	it("process 2's sweep keeps process 1's live (touched) files", async () => {
 		const tmp = privateDir();
 		const p1 = runChild("wait", tmp); // ages its files 48 h, then touch tick
-		const info = await p1.ready;
+		const info = await ready(p1);
 		for (const p of info.paths) expect(Date.now() - statSync(p).mtimeMs).toBeLessThan(60_000);
 		const res = await sweepTempOutputFiles({ agentDir: privateDir(), tmpDir: tmp, env: ON });
 		expect(res).toEqual({ status: "swept", removed: 0, kept: 2 });
 		expect(info.paths.every((p) => existsSync(p))).toBe(true);
 		p1.child.kill("SIGTERM");
-		await p1.result;
+		await exited(p1, "exit after SIGTERM");
 		expect(omkFiles(tmp)).toHaveLength(0);
 	}, 30_000);
 });
@@ -300,8 +325,8 @@ describe("spec 068 criterion 9: flag off is inert", () => {
 	it("flag off child: same creation count, nothing deleted", async () => {
 		const tmp = privateDir();
 		const run = runChild("exit", tmp, "0");
-		const info = await run.ready;
-		await run.result;
+		const info = await ready(run);
+		await exited(run);
 		expect(info.paths).toHaveLength(2);
 		expect(omkFiles(tmp)).toHaveLength(2);
 	}, 30_000);
