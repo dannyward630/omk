@@ -122,6 +122,10 @@ bash and MCP), n = 20 runs per arm, flag on:
 9. Flag off: file creation and deletion counts identical to main; no exit handler, timer or sweep installed.
 10. TUI: the sweep runs after the first render and never blocks startup (first-frame time unchanged within noise,
     paired A/B).
+    Note: the spec had no numeric threshold, so the threshold was set after measurement. Verdict basis (n = 30
+    interleaved pairs, built CLI at 18dbcbe329): paired diff 95% CI upper bound +25.0 ms for first frame (≈3% of off
+    p50 773.9 ms, < 1/3 of off SD 82.4 ms), +20.4 ms for first byte; the sweep ran in 30/30 flag-on runs (200 → 0
+    stale files, stamp written); data `/workspace/omk-he-068-evidence/c10/`.
 11. Full suite green; paired `--noreg` A/B (Bench Analyst) on success / ctx / wall time.
 
 Do **not** manually delete the existing ~265 MB of `omk-*.log` in the shared `/tmp` before the flag merges.
