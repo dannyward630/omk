@@ -28,7 +28,14 @@ For each run, for consecutive model requests i-1 → i (same run, kind != summar
 - Output: per-scenario median `prefix_keep_run`, and a table of break causes (JSON path → count, bytes lost).
 
 ## Phase 1 success criteria (fixed before measuring)
-1. Tool works: on a synthetic run where only one appended user message differs, `prefix_keep` = len(old)/len(new) exactly (unit test).
+1. Tool works: on a synthetic run where only one appended user message differs, `prefix_keep` = (len(old) − k)/len(new) exactly
+   (unit test). `k` is computed from the old body itself: byte length from immediately after the end of the last element of
+   `messages` to the end of the body (never hardcoded, e.g. as 2 bytes `]}`; providers can append keys such as `tools` or `stream`
+   after `messages`, making k larger). The unit test covers (a) a body where `messages` is the last key and (b) a body with other keys
+   after `messages`; in both the value matches exactly and the first diff path is `messages[n]` (n = index of the appended message).
+   In (b) the bytes after `messages` counted as lost each turn are a real loss the metric should measure; the results table shows
+   this tail loss (k) as a separate column.
+   Note: corrected before any measurement (Tech Lead, 2026-10-17); a typo fix (old wording could never pass), not a relaxation.
 2. Determinism: two runs of the same scenario on the same build give identical break-cause tables.
 3. Every break with > 1% of request bytes lost is attributed to a JSON path (no "unknown").
 Phase 1 claims nothing about cost. It produces the list of candidate fixes; each fix becomes its own spec with its own fixed target
