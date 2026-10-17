@@ -53,6 +53,7 @@ function omkFiles(dir: string): string[] {
 
 interface ChildRun {
 	child: ChildProcess;
+	flag: "1" | "0";
 	result: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
 	ready: Promise<{ paths: string[]; recovered: number; listenerCounts: number[] }>;
 }
@@ -80,7 +81,7 @@ function runChild(mode: string, tmp: string, flag: "1" | "0" = "1", extraEnv: No
 	const result = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
 		child.on("exit", (code, signal) => resolve({ code, signal })),
 	);
-	return { child, result, ready };
+	return { child, flag, result, ready };
 }
 
 const CHILD_WAIT_MS = 5_000;
@@ -96,7 +97,7 @@ async function within<T>(run: ChildRun, promise: Promise<T>, what: string): Prom
 		if (winner === "timeout") {
 			run.child.kill("SIGKILL");
 			expect.fail(
-				`spec068 child (pid ${run.child.pid}) did not ${what} within ${CHILD_WAIT_MS} ms; killed with SIGKILL`,
+				`spec068 child (pid ${run.child.pid}, OMK_TEMP_OUTPUT_CLEANUP=${run.flag}) did not ${what} within ${CHILD_WAIT_MS} ms; killed with SIGKILL`,
 			);
 		}
 		return winner as T;
