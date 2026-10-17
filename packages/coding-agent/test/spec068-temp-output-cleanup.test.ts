@@ -54,17 +54,17 @@ function omkFiles(dir: string): string[] {
 interface ChildRun {
 	child: ChildProcess;
 	result: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
-	ready: Promise<{ paths: string[]; recovered: number }>;
+	ready: Promise<{ paths: string[]; recovered: number; listenerCounts: number[] }>;
 }
 
-function runChild(mode: string, tmp: string, flag: "1" | "0" = "1"): ChildRun {
-	const env: NodeJS.ProcessEnv = { ...process.env, TMPDIR: tmp };
+function runChild(mode: string, tmp: string, flag: "1" | "0" = "1", extraEnv: NodeJS.ProcessEnv = {}): ChildRun {
+	const env: NodeJS.ProcessEnv = { ...process.env, TMPDIR: tmp, ...extraEnv };
 	delete env.OMK_TEMP_OUTPUT_CLEANUP;
 	env.OMK_TEMP_OUTPUT_CLEANUP = flag;
 	const child = spawn(process.execPath, [CHILD, mode], { env, stdio: ["ignore", "pipe", "pipe"] });
 	let out = "";
 	let err = "";
-	const ready = new Promise<{ paths: string[]; recovered: number }>((resolve, reject) => {
+	const ready = new Promise<{ paths: string[]; recovered: number; listenerCounts: number[] }>((resolve, reject) => {
 		child.stdout?.on("data", (d: Buffer) => {
 			out += d.toString();
 			const nl = out.indexOf("\n");
@@ -129,6 +129,30 @@ describe("spec 068 criterion 3: SIGINT / SIGTERM (n=20 each)", () => {
 			expect(left).toBe(0);
 			expect(bySignal).toBe(20);
 		}, 120_000);
+	}
+});
+
+describe("spec 068 criterion 3 regression: real settings-manager -> proper-lockfile -> signal-exit 3.0.7", () => {
+	for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+		it(`${sig}: same terminating signal flag on vs off, 0 files with flag on`, async () => {
+			const out: Record<string, { signal: NodeJS.Signals | null; left: number; listeners: number[] }> = {};
+			for (const flag of ["0", "1"] as const) {
+				const tmp = privateDir();
+				const run = runChild("wait", tmp, flag, { SPEC068_LOAD_SETTINGS: "1" });
+				const info = await run.ready;
+				expect(info.paths).toHaveLength(2);
+				run.child.kill(sig);
+				const { signal } = await run.result;
+				out[flag] = { signal, left: omkFiles(tmp).length, listeners: info.listenerCounts };
+			}
+			expect(out["0"]!.signal).toBe(sig);
+			expect(out["1"]!.signal).toBe(sig);
+			expect(out["1"]!.left).toBe(0);
+			expect(out["0"]!.left).toBe(2); // flag off: today's behaviour
+			// signal-exit owns one listener per signal; our cleanup adds none (onExit only).
+			expect(out["0"]!.listeners).toEqual([1, 1, 1]);
+			expect(out["1"]!.listeners).toEqual(out["0"]!.listeners);
+		}, 30_000);
 	}
 });
 
@@ -256,16 +280,15 @@ describe("spec 068 criterion 7: concurrent process, same uid, shared private TMP
 
 describe("spec 068 criterion 9: flag off is inert", () => {
 	it("no registration, listener, timer or sweep", async () => {
-		const exitBefore = process.listenerCount("exit");
-		const sigBefore = process.listenerCount("SIGTERM");
+		const events = ["exit", "SIGINT", "SIGTERM", "SIGHUP"] as const;
+		const baseline = events.map((e) => process.listenerCount(e));
 		expect(registerTempOutputFile("/x/omk-bash-0.log", { persisted: false, env: {} })).toBe(false);
 		expect(
 			registerTempOutputFile("/x/omk-bash-0.log", { persisted: false, env: { OMK_TEMP_OUTPUT_CLEANUP: "0" } }),
 		).toBe(false);
 		expect(isTempOutputCleanupInstalled()).toBe(false);
 		expect(getRegisteredTempOutputFiles()).toEqual([]);
-		expect(process.listenerCount("exit")).toBe(exitBefore);
-		expect(process.listenerCount("SIGTERM")).toBe(sigBefore);
+		expect(events.map((e) => process.listenerCount(e))).toEqual(baseline);
 		const tmp = privateDir();
 		touchFile(join(tmp, `omk-bash-${hex16(20)}.log`), 3 * DAY);
 		const agentDir = privateDir();

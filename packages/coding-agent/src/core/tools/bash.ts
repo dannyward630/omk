@@ -149,7 +149,10 @@ export function createBashToolDefinition(
 				tempFilePrefix: "omk-bash",
 				// Spec 068: only registered when not persisted and OMK_TEMP_OUTPUT_CLEANUP=1 (else a no-op).
 				onTempFileCreated: (path) =>
-					registerTempOutputFile(path, { persisted: ctx?.sessionManager?.getSessionFile?.() !== undefined }),
+					registerTempOutputFile(path, {
+						// No ctx/sessionManager: treat as persisted (do not register).
+						persisted: !ctx?.sessionManager || ctx.sessionManager.getSessionFile() !== undefined,
+					}),
 			});
 			let updateTimer: NodeJS.Timeout | undefined;
 			let updateDirty = false;

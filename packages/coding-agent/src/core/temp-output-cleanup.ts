@@ -10,6 +10,7 @@ import { unlinkSync, utimesSync } from "node:fs";
 import { lstat, readdir, stat, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import onExit from "signal-exit";
 
 export const TEMP_OUTPUT_CLEANUP_ENV = "OMK_TEMP_OUTPUT_CLEANUP";
 /** Exact generated name; never a loose `omk-*.log` glob. */
@@ -18,8 +19,6 @@ export const TEMP_OUTPUT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const TEMP_OUTPUT_TOUCH_INTERVAL_MS = 60 * 60 * 1000;
 export const TEMP_OUTPUT_SWEEP_STAMP = "temp-output-sweep.stamp";
 
-const CLEANUP_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
-
 export function isTempOutputCleanupEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
 	return env[TEMP_OUTPUT_CLEANUP_ENV] === "1";
 }
@@ -27,7 +26,7 @@ export function isTempOutputCleanupEnabled(env: NodeJS.ProcessEnv = process.env)
 const registered = new Set<string>();
 let installed = false;
 let touchTimer: NodeJS.Timeout | undefined;
-const signalListeners = new Map<string, () => void>();
+let removeExitHandler: (() => void) | undefined;
 
 /** Synchronous, best effort; never throws and never touches the exit code. */
 export function cleanupRegisteredTempOutputFiles(): number {
@@ -54,36 +53,16 @@ export function touchRegisteredTempOutputFiles(now: Date = new Date()): void {
 	}
 }
 
-function onExit(): void {
-	cleanupRegisteredTempOutputFiles();
-}
-
 /**
- * Signal listener that keeps the signal's normal outcome. If other listeners exist they decide (their
- * `process.exit()` reaches the exit hook). If ours is the only one, files are deleted, the listener is removed and
- * the signal is re-raised so the default action (termination by that signal) still happens.
+ * signal-exit 3.x (the same instance proper-lockfile loads) already owns SIGINT/SIGTERM/SIGHUP and re-raises the
+ * signal; we only add a synchronous cleanup on top of it. The process dies right after the callback, so no async work.
  */
-function makeSignalListener(sig: (typeof CLEANUP_SIGNALS)[number]): () => void {
-	const listener = () => {
-		// Another handler owns this signal (e.g. the TUI ignores SIGINT): the process may live on, so keep the
-		// files; if that handler exits, the exit hook deletes them.
-		if (process.listenerCount(sig) !== 1) return;
-		cleanupRegisteredTempOutputFiles();
-		process.removeListener(sig, listener);
-		process.kill(process.pid, sig);
-	};
-	return listener;
-}
-
 function install(): void {
 	if (installed) return;
 	installed = true;
-	process.on("exit", onExit);
-	for (const sig of CLEANUP_SIGNALS) {
-		const listener = makeSignalListener(sig);
-		signalListeners.set(sig, listener);
-		process.on(sig, listener);
-	}
+	removeExitHandler = onExit(() => {
+		cleanupRegisteredTempOutputFiles();
+	});
 	touchTimer = setInterval(() => touchRegisteredTempOutputFiles(), TEMP_OUTPUT_TOUCH_INTERVAL_MS);
 	touchTimer.unref();
 }
@@ -112,11 +91,8 @@ export function getRegisteredTempOutputFiles(): readonly string[] {
 
 /** Test helper: remove listeners and timer, forget registrations (does not delete files). */
 export function resetTempOutputCleanupForTests(): void {
-	if (installed) {
-		process.removeListener("exit", onExit);
-		for (const [sig, listener] of signalListeners) process.removeListener(sig, listener);
-	}
-	signalListeners.clear();
+	removeExitHandler?.();
+	removeExitHandler = undefined;
 	if (touchTimer) clearInterval(touchTimer);
 	touchTimer = undefined;
 	installed = false;

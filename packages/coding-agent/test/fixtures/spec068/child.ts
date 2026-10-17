@@ -6,6 +6,20 @@ import { registerTempOutputFile, touchRegisteredTempOutputFiles } from "../../..
 import { OutputAccumulator } from "../../../src/core/tools/output-accumulator.ts";
 
 const mode = process.argv[2] ?? "exit";
+// Real startup imports settings-manager.ts (and auth-storage.ts), which statically import proper-lockfile, which
+// loads signal-exit 3.0.7 and installs its SIGINT/SIGTERM/SIGHUP listeners on the first lock call.
+if (process.env.SPEC068_LOAD_SETTINGS === "1") {
+	const { SettingsManager } = await import("../../../src/core/settings-manager.ts");
+	const { mkdtempSync } = await import("node:fs");
+	const { tmpdir } = await import("node:os");
+	const { join } = await import("node:path");
+	const dir = mkdtempSync(join(tmpdir(), "agent-"));
+	const sm = SettingsManager.create(dir, dir);
+	sm.setTheme?.("dark");
+	await sm.flush?.();
+	const listeners = ["SIGINT", "SIGTERM", "SIGHUP"].map((sig) => process.listenerCount(sig));
+	process.stderr.write(`listeners-after-settings ${JSON.stringify(listeners)}\n`);
+}
 const persisted = mode === "persisted";
 const lines = Array.from({ length: 5000 }, (_, i) => `line ${i} ${i === 2500 ? "MIDDLE-FACT-068" : "x".repeat(20)}`);
 const big = lines.join("\n");
@@ -36,5 +50,6 @@ if (mode === "wait") {
 	for (const p of paths) utimesSync(p, old, old);
 	touchRegisteredTempOutputFiles();
 }
-process.stdout.write(`${JSON.stringify({ paths, recovered })}\n`);
+const listenerCounts = ["SIGINT", "SIGTERM", "SIGHUP"].map((sig) => process.listenerCount(sig));
+process.stdout.write(`${JSON.stringify({ paths, recovered, listenerCounts })}\n`);
 if (mode === "wait") setInterval(() => {}, 1000);
