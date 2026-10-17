@@ -1,6 +1,6 @@
 # Spec 070: measure request-prefix stability (offline cache-hit proxy) (1.4.4)
 
-Status: **spec draft**, measurement only, no product behaviour change. Base: origin/main `fd495fd77b`.
+Status: **spec only, criteria approved by Tech Lead (2026-10-17)**, measurement only, no product behaviour change. Base: origin/main `fd495fd77b`.
 Spec number: 066-069 are taken by local branches; 070 is free in all worktrees and branches.
 
 ## Problem
@@ -14,14 +14,16 @@ The mock provider does not simulate caching, and real-model runs (`cached_tokens
 For each run, for consecutive model requests i-1 → i (same run, kind != summary):
 - `prefix_keep_i = first_diff_byte(body_{i-1}, body_i) / len(body_i)`, computed on the **provider-shaped request body** the mock receives
   (canonical JSON as sent, no re-serialisation).
-- `prefix_keep_run` = token-weighted mean over the run (weights = prompt tokens of request i). Report also the **first diff location**
+- **Primary:** `prefix_keep_run` = token-weighted mean over the run (weights = prompt tokens of request i).
+  **Secondary:** per-turn median of `prefix_keep_i`, reported next to it. Report also the **first diff location**
   as a JSON path (`system`, `tools[3].description`, `messages[7].content[0]`, …) so each break has a cause.
 - Upper bound only: real cache reuse is ≤ this (breakpoint placement, TTL, minimum cache size).
 
 ## Phase 1 (this spec): baseline on current main, harness-side only
 - Bench Analyst's mock records, per request: run id, sequence, body length, sha256, and the first-diff byte and JSON path versus the
   previous body of the same run. Bodies are kept only in the private run dir (0600), never committed (they can contain file contents).
-- No omk source change. Scenarios: the 066 run2 set (7 scenarios) plus one multi-turn edit task (read → edit → bash test → edit),
+- No omk source change. Scenarios: the 066 run2 set (7 scenarios) plus one multi-turn edit task (read → edit → bash test → edit)
+  and one **long session (> 30 turns) that triggers at least one compaction** (fake model reports realistic usage = prompt size),
   20 runs each, Node >=22.19, `OMK_TRUST_PROJECT=0`, load1 logged, equal-length build dirs.
 - Output: per-scenario median `prefix_keep_run`, and a table of break causes (JSON path → count, bytes lost).
 
@@ -41,6 +43,5 @@ Phase 1 claims nothing about cost. It produces the list of candidate fixes; each
 ## Phase 2 (later, needs 인호's approval)
 Confirm the proxy against real `cacheRead` on a small real-provider run: report run count and estimated cost first.
 
-## Open questions (Tech Lead)
-1. Is the multi-turn edit scenario enough, or add a long session (> 30 turns) to see compaction effects?
-2. Weighting by prompt tokens vs plain mean: proposal is token-weighted (matches cost).
+## Decisions (Tech Lead, 2026-10-17)
+Long session (> 30 turns, with compaction) included; primary metric token-weighted mean, turn median secondary. No open questions remain.
