@@ -8,7 +8,7 @@ Status: draft, spec only, no implementation. Base: origin/main `fd495fd77b`. **D
 Every truncated bash result, and (with 066) every truncated MCP result in `--no-session` mode, leaves a 0600 file in
 `$TMPDIR` that omk never deletes. Bench Analyst's 066 mock run2 (`/workspace/omk-eval-066/REPORT_run2.md`,
 `ab_run2.tmp_before` = 3 → `ab_run2.tmp_after` = 123 `omk-mcp-*` files) left 120 files, about 72 MB, after one run of
-160 CLI invocations. On this box `/tmp` now holds 772 `omk-bash-*.log` and 123 `omk-mcp-*.log` (265 MB for all
+280 CLI runs (`ab_run2/results.jsonl`). On this box `/tmp` now holds 772 `omk-bash-*.log` and 123 `omk-mcp-*.log` (265 MB for all
 `omk-*.log`). Workers and benchmarks (R8 uses `--no-session -p`) grow this without bound, and the files can contain
 secrets (that is why they are 0600).
 
