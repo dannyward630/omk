@@ -86,6 +86,16 @@ describe("full-display rule (fit-whole fixture, excerpt identical to the fixture
 		},
 	);
 
+	it("excerpt differing only by a single trailing newline is full-display, excluded from denominator", () => {
+		const raw = "start\nError: boom\nend\n";
+		const [result] = measureTwoWindowFixtures([{ file: "nl", raw, truth }], { rule: "097" });
+		expect(result.excerpt.text).not.toBe(raw);
+		expect(`${result.excerpt.text}\n`).toBe(raw);
+		expect(result.fullDisplay).toBe(true);
+		expect(result.pass).toBe(false);
+		expect(a1Tally([result])).toMatchObject({ counted: 0, fullDisplay: 1 });
+	});
+
 	it("non-identical small fixture (sanitize changes it) -> existing hard stop", () => {
 		expect(() =>
 			measureTwoWindowFixtures([{ file: "ansi", raw: "start\n\u001b[31mError: boom\u001b[0m\nend\n", truth }], {

@@ -10,3 +10,5 @@
 - `Found N errors` count lines are summary lines.
 - Code-snippet / caret (`^`) display lines are not error lines.
 - Single-failure fixtures use last = first.
+
+Full-display comparison (excerpt vs. whole fixture) is done after trimming trailing whitespace, same as the manifest line convention.
