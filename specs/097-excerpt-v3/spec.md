@@ -100,3 +100,21 @@ holdout3 is training only; it is not acceptance.
 2. D4 scope — **resolved:** only listed known formats (logfmt `level=`, JSON `"level":`); error/fatal never skipped; tests for both.
 3. holdout4 author — **resolved:** Bench Analyst outside the room, given format conditions only; no room member authors it.
 4. Flag — **resolved:** separate `OMK_GOAL_DIAGNOSTICS_V3` (rollback = unset; A3 byte-identity simpler to check).
+
+## Amendments (implementation decisions, recorded before any holdout4 measurement)
+
+Both decisions below were found via synthetic unit tests in `packages/coding-agent/test/goal-acceptance-diagnostic-v3.test.ts`, before any holdout4 measurement. Implemented in `765cb68e57`.
+
+1. **D5 stricter.** Warnings anchor window 1 only when no error-marker, failure-marker (D1), or `file:line` shape (D2) line exists anywhere in the output. This replaces "when a D1/D2 line exists later" above; a warning that comes after an error line no longer anchors either. Test group: `spec 097 D5 warnings`.
+2. **Cut line dropped whole (flag on only).** With `OMK_GOAL_DIAGNOSTICS_V3=1`, a window-1 line after the anchor that would be truncated at the cap is dropped whole, not cut with a marker. It is then either elided by the middle marker or shown whole by window 2. The cut marker broke the scorer's segment matching of printed error lines. This was exposed by the synthetic generated outputs in `spec 097 A4 caps` ("every excerpt is ≤ 1,536 B and ≤ 40 lines over 300 generated outputs (incl. 1 MiB)"); there is no separate named test for this case. Flag off is unchanged (095 behaviour, A3b golden).
+
+### Implementer declaration
+
+The implementer (Harness Engineer) touched holdout4 only through an automated CR-byte check and the manifest sha256 check. The two amendments above came from synthetic unit tests, not from holdout4. The implementer cannot fully rule out having seen fixture content during those checks.
+
+### Evaluation change (Tech Lead ruling, before any holdout4 measurement)
+
+- **holdout3 label exposure:** some holdout3 manifest labels appeared on screen before holdout4 was written. holdout3 stays an A2 regression floor only.
+- **holdout4 is reference-only.** It is measured once at the frozen, Tech Lead-approved implementation head, and the result is recorded. It is not used for A1.
+- **A1 moves to holdout5.** holdout5 has ≥ 10 fixtures, written by Bench Analyst on `main`, with a top-level `authorDeclaration`. It uses no tool that appears in holdout1–4, including `go test`, `unittest`, `doctest`, and `node --test`. It has the same type minimums and `kind` field as holdout4. holdout5 is merged only after Tech Lead approves and freezes the implementation head. There is one official measurement, on that merge commit. Pass = 10/10.
+- **Feature freeze:** 2026-10-23 12:00 KST. If A1 has not passed by then, 097 moves to 1.5.1.
