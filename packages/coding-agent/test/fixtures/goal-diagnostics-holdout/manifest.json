@@ -1,12 +1,62 @@
 {
- "vitest-60-pass.txt": " ❯ test/lexer.test.ts (2 tests | 1 failed)",
- "jest-55-pass.txt": "FAIL src/date.test.js",
- "tsc-multi.txt": "src/m0.ts(0,3): error TS2339: Property 'x0' does not exist on type 'Y'.",
- "eslint-warn-flood.txt": "  7:3  error  'x' is not defined  no-undef",
- "pytest-short.txt": "E   AssertionError: assert 2 == 3",
- "make-gcc.txt": "f7.c:12:5: error: implicit declaration of function 'foo'",
- "gradle.txt": "Main.java:5: error: cannot find symbol",
- "ruby-rspec.txt": "     Failure/Error: expect(u.name).to eq('A B')",
- "deno-ansi.txt": "error: AssertionError: Values are not equal",
- "korean-30-pass.txt": "❌ 실패: 날짜 형식이 달라요 📅 (src/날짜.ts:9)"
+ "vitest-60-pass.txt": {
+  "groundTruthLine": 63,
+  "groundTruthLastLine": 63,
+  "groundTruthText": " ❯ test/lexer.test.ts (2 tests | 1 failed)",
+  "groundTruthLastText": " ❯ test/lexer.test.ts (2 tests | 1 failed)"
+ },
+ "jest-55-pass.txt": {
+  "groundTruthLine": 56,
+  "groundTruthLastLine": 56,
+  "groundTruthText": "FAIL src/date.test.js",
+  "groundTruthLastText": "FAIL src/date.test.js"
+ },
+ "tsc-multi.txt": {
+  "groundTruthLine": 1,
+  "groundTruthLastLine": 80,
+  "groundTruthText": "src/m0.ts(0,3): error TS2339: Property 'x0' does not exist on type 'Y'.",
+  "groundTruthLastText": "src/m79.ts(79,3): error TS2339: Property 'x79' does not exist on type 'Y'."
+ },
+ "eslint-warn-flood.txt": {
+  "groundTruthLine": 92,
+  "groundTruthLastLine": 92,
+  "groundTruthText": "  7:3  error  'x' is not defined  no-undef",
+  "groundTruthLastText": "  7:3  error  'x' is not defined  no-undef"
+ },
+ "pytest-short.txt": {
+  "groundTruthLine": 6,
+  "groundTruthLastLine": 6,
+  "groundTruthText": "E   AssertionError: assert 2 == 3",
+  "groundTruthLastText": "E   AssertionError: assert 2 == 3"
+ },
+ "make-gcc.txt": {
+  "groundTruthLine": 8,
+  "groundTruthLastLine": 8,
+  "groundTruthText": "f7.c:12:5: error: implicit declaration of function 'foo'",
+  "groundTruthLastText": "f7.c:12:5: error: implicit declaration of function 'foo'"
+ },
+ "gradle.txt": {
+  "groundTruthLine": 12,
+  "groundTruthLastLine": 12,
+  "groundTruthText": "Main.java:5: error: cannot find symbol",
+  "groundTruthLastText": "Main.java:5: error: cannot find symbol"
+ },
+ "ruby-rspec.txt": {
+  "groundTruthLine": 6,
+  "groundTruthLastLine": 6,
+  "groundTruthText": "     Failure/Error: expect(u.name).to eq('A B')",
+  "groundTruthLastText": "     Failure/Error: expect(u.name).to eq('A B')"
+ },
+ "deno-ansi.txt": {
+  "groundTruthLine": 10,
+  "groundTruthLastLine": 10,
+  "groundTruthText": "error: AssertionError: Values are not equal",
+  "groundTruthLastText": "error: AssertionError: Values are not equal"
+ },
+ "korean-30-pass.txt": {
+  "groundTruthLine": 31,
+  "groundTruthLastLine": 31,
+  "groundTruthText": "❌ 실패: 날짜 형식이 달라요 📅 (src/날짜.ts:9)",
+  "groundTruthLastText": "❌ 실패: 날짜 형식이 달라요 📅 (src/날짜.ts:9)"
+ }
 }

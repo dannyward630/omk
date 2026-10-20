@@ -8,10 +8,12 @@
  * 095 pass: first line in window 1 and, when the last line differs, last line in window 2.
  * Top-level `authorDeclaration` (a string) is skipped. Set OMK_GOAL_DIAGNOSTICS_V3=1 to measure excerpt v3.
  * 097 pass: both lines inside the emitted excerpt text (any window), not inside an elision marker.
+ * Entries with `a1Excluded: true` are reference only: shown in the table, reported as "excluded",
+ * and not counted in the A1 pass line or the exit code.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type MeasureRule, manifestFixtures, measureTwoWindowFixtures } from "../src/core/goal-acceptance-diagnostic-measure.ts";
+import { a1Tally, type MeasureRule, manifestFixtures, measureTwoWindowFixtures } from "../src/core/goal-acceptance-diagnostic-measure.ts";
 
 const args = process.argv.slice(2);
 const ruleArg = args.find((arg) => arg.startsWith("--rule="))?.slice("--rule=".length) ?? "095";
@@ -32,9 +34,10 @@ try {
 		{ rule },
 	);
 	console.table(rows.map(({ excerpt: _excerpt, ...row }) => row));
-	const passed = rows.filter((row) => row.pass).length;
-	console.log(`rule ${rule}: pass ${passed}/${rows.length}`);
-	process.exit(passed === rows.length ? 0 : 1);
+	const tally = a1Tally(rows);
+	console.log(`rule ${rule}: pass ${tally.passed}/${tally.counted}`);
+	if (tally.excluded > 0) console.log(`a1Excluded (reference only): pass ${tally.excludedPassed}/${tally.excluded}`);
+	process.exit(tally.passed === tally.counted ? 0 : 1);
 } catch (error) {
 	console.error(`HARD STOP: ${(error as Error).message}`);
 	process.exit(2);

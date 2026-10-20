@@ -115,8 +115,11 @@ describe("spec 094 diagnostic excerpt", () => {
 
 	it("regression: keeps the first error line of the closed holdout set (10/10)", () => {
 		const dir = join(import.meta.dirname, "fixtures", "goal-diagnostics-holdout");
-		const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as Record<string, string>;
-		const entries = Object.entries(manifest);
+		const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as Record<
+			string,
+			{ groundTruthText: string }
+		>;
+		const entries = Object.entries(manifest).map(([file, truth]) => [file, truth.groundTruthText] as const);
 		expect(entries).toHaveLength(10);
 		for (const [file, line] of entries) {
 			const { text } = excerptOf(readFileSync(join(dir, file), "utf8"));

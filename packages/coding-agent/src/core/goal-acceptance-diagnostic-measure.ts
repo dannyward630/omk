@@ -46,7 +46,31 @@ export interface MeasureRow {
 	/** 097 rule: GT line present in emitted (non-marker) excerpt text. */
 	readonly firstShown: boolean;
 	readonly lastShown: boolean;
+	/** Manifest `a1Excluded: true`: reference only, not counted toward A1 (holdout5 tool overlap). */
+	readonly a1Excluded: boolean;
 	readonly excerpt: DiagnosticExcerpt;
+}
+
+/** True only when the manifest entry has `a1Excluded: true` (any other value counts toward A1). */
+export function isA1Excluded(truth: unknown): boolean {
+	return (truth as Record<string, unknown> | null)?.a1Excluded === true;
+}
+
+/** A1 tally: counted rows exclude `a1Excluded`; excluded rows are reported separately. */
+export function a1Tally(rows: readonly MeasureRow[]): {
+	readonly passed: number;
+	readonly counted: number;
+	readonly excludedPassed: number;
+	readonly excluded: number;
+} {
+	const counted = rows.filter((row) => !row.a1Excluded);
+	const excluded = rows.filter((row) => row.a1Excluded);
+	return {
+		passed: counted.filter((row) => row.pass).length,
+		counted: counted.length,
+		excludedPassed: excluded.filter((row) => row.pass).length,
+		excluded: excluded.length,
+	};
 }
 
 export function exceedsCap(sanitized: string): boolean {
@@ -162,9 +186,9 @@ export function measureTwoWindowFixtures(
 				`${fixture.file}: fits the cap whole (<= ${GOAL_DIAGNOSTIC_MAX_BYTES} B and <= ${GOAL_DIAGNOSTIC_MAX_LINES} lines after sanitize)`,
 			);
 		}
-		return { ...fixture, first, last, text };
+		return { ...fixture, first, last, text, a1Excluded: isA1Excluded(fixture.truth) };
 	});
-	return prepared.map(({ file, first, last, text }) => {
+	return prepared.map(({ file, first, last, text, a1Excluded }) => {
 		const excerpt = buildDiagnosticExcerpt(diagnosticOutputFromText(text));
 		const score = scoreFixture(excerpt, text, first, last, rule);
 		return {
@@ -174,6 +198,7 @@ export function measureTwoWindowFixtures(
 			pattern: excerpt.mode,
 			fallback: excerpt.mode === "fallback",
 			passthrough: !excerpt.truncated,
+			a1Excluded,
 			excerpt,
 		};
 	});
