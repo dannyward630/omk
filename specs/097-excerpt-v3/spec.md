@@ -60,7 +60,7 @@ Fixtures that fit the cap whole are invalid (hard stop), as in 095.
 | A1 | holdout4 (≥10 fixtures) | **10/10** by the rule above |
 | A2 | holdout1 + holdout2 + holdout3 (regression floor, training) | ≥ 28/30 by the same rule **and** first error line (`groundTruthLine`) shown in 30/30 (no regression) |
 | A3a | all diagnostics flags off | output byte-identical to main on all existing goal-diagnostics fixtures |
-| A3b | only `OMK_GOAL_DIAGNOSTICS_V3` off | output byte-identical to the 095 branch head (`feat/095-two-window-excerpt`) on the same fixtures |
+| A3b | only `OMK_GOAL_DIAGNOSTICS_V3` off | output byte-identical to the frozen 095 branch head `025bb97eed` (`feat/095-two-window-excerpt`; no further commits to that branch) on the same fixtures |
 | A4 | caps | every excerpt ≤ 1,536 B and ≤ 40 lines |
 | A5 | unit | decoy (success line containing "error") never anchors |
 | A6 | unit | D4 known-format tests (skip info/warning; never skip error/fatal; unlisted format not skipped) |
