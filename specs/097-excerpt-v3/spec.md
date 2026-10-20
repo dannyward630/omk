@@ -44,6 +44,15 @@ Per fixture: the real first error line (`groundTruthLine`) **and** the real last
 (`groundTruthLastLine`) are each **inside the emitted excerpt** (any window, not inside an elision marker).
 Fixtures that fit the cap whole are invalid (hard stop), as in 095.
 
+### Rationale: this rule is a loosening, chosen after seeing holdout3
+
+- 095 rule: first error in window 1 **and** the last error, if different, **in window 2**.
+- 097 rule: both GT lines (`groundTruthLine`, `groundTruthLastLine`) **anywhere in the emitted excerpt**.
+- This is a relaxation of the criterion, and it was made **after** the holdout3 results were seen.
+- Reference only: the same holdout3 output scores **0/10 under the 095 rule** (official 095 verdict, unchanged)
+  and **7/10 under the 097 rule**. holdout3 is not re-scored as a pass.
+- The rule is fixed here, before any implementation commit, and is not changed after holdout4 is measured.
+
 ### Numeric acceptance criteria
 
 | ID | Test | Pass |
@@ -57,6 +66,12 @@ Fixtures that fit the cap whole are invalid (hard stop), as in 095.
 
 D1–D5 were designed after seeing holdout3, so holdout1–3 results prove nothing about generalisation.
 A2 is only a regression floor; the only real evidence is A1 (holdout4 10/10).
+
+### What 10/10 proves
+
+10/10 on holdout4 gives a one-sided 95% lower bound on the true pass rate of about **74%**
+(0.05^(1/10) ≈ 0.741). holdout4 is therefore evidence that the flag is worth shipping **default-off**;
+it is **not** evidence for default-on. Default-on is decided separately, on a larger set.
 
 ## Ordering (each a separate commit, in this order)
 
