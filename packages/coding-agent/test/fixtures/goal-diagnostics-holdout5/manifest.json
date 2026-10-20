@@ -19,7 +19,8 @@
       "c"
     ],
     "failureType": "test",
-    "sha256": "84ef7d146fcac92513f89f2cdf802b7440e646a38aa2c9c2d2a480a8045fdbb2"
+    "sha256": "84ef7d146fcac92513f89f2cdf802b7440e646a38aa2c9c2d2a480a8045fdbb2",
+    "a1Excluded": true
   },
   "jest-coverage-threshold.txt": {
     "groundTruthLine": 37,
@@ -41,7 +42,8 @@
       "d"
     ],
     "failureType": "test",
-    "sha256": "c3874d6cfa206a80c747062ea499de40f04f98c7290cb191a603255526f9a800"
+    "sha256": "c3874d6cfa206a80c747062ea499de40f04f98c7290cb191a603255526f9a800",
+    "a1Excluded": true
   },
   "mocha-deep-equal.txt": {
     "groundTruthLine": 41,
@@ -62,7 +64,8 @@
       "b"
     ],
     "failureType": "test",
-    "sha256": "cd72f4cab31e03fe2f6700bbc99ab38f82b71f01eb882c346406252c620ff911"
+    "sha256": "cd72f4cab31e03fe2f6700bbc99ab38f82b71f01eb882c346406252c620ff911",
+    "a1Excluded": true
   },
   "tsc-listfiles.txt": {
     "groundTruthLine": 1,
@@ -81,7 +84,8 @@
       "b"
     ],
     "failureType": "typecheck",
-    "sha256": "430f984de8a3ea59f47af4f77811ee7b50ece1af58b717c39205e11dc06fb063"
+    "sha256": "430f984de8a3ea59f47af4f77811ee7b50ece1af58b717c39205e11dc06fb063",
+    "a1Excluded": true
   },
   "eslint-warnings-then-errors.txt": {
     "groundTruthLine": 44,
@@ -101,7 +105,8 @@
       "b"
     ],
     "failureType": "lint",
-    "sha256": "76d141a908567ae135109aa827df28deb288524999e5b9571ab11694d74e28ff"
+    "sha256": "76d141a908567ae135109aa827df28deb288524999e5b9571ab11694d74e28ff",
+    "a1Excluded": true
   },
   "mypy-strict.txt": {
     "groundTruthLine": 2,
@@ -121,7 +126,8 @@
       "b"
     ],
     "failureType": "typecheck",
-    "sha256": "f5f792a74c53132a198320dfbc48b3501c42fbf3c7c5c810d4b2f4548d028344"
+    "sha256": "f5f792a74c53132a198320dfbc48b3501c42fbf3c7c5c810d4b2f4548d028344",
+    "a1Excluded": true
   },
   "pyright-basic.txt": {
     "groundTruthLine": 2,
@@ -240,5 +246,88 @@
     ],
     "failureType": "lint",
     "sha256": "243cc28911b80790c7b153c49a8b7344e00de729cfcc59106eb2f5912f1f1538"
+  },
+  "c8-branch-threshold.txt": {
+    "groundTruthLine": 38,
+    "groundTruthLastLine": 38,
+    "groundTruthText": "ERROR: Coverage for branches (67.05%) does not meet global threshold (80%)",
+    "groundTruthLastText": "ERROR: Coverage for branches (67.05%) does not meet global threshold (80%)",
+    "linesBefore": 37,
+    "sanitizedBytes": 2143,
+    "sanitizedLines": 38,
+    "tags": [
+      "c8",
+      "coverage",
+      "summary-only"
+    ],
+    "tool": "c8",
+    "kind": [
+      "a",
+      "b",
+      "d"
+    ],
+    "failureType": "test",
+    "sha256": "613ec45c282949ffc5bc5e48674799d0e248c2ffb71ee27be7439f5ef7ffff49"
+  },
+  "sqlfluff-ansi.txt": {
+    "groundTruthLine": 9,
+    "groundTruthLastLine": 82,
+    "groundTruthText": "L:   1 | P:   1 | LT09 | Select targets should be on a new line unless there is",
+    "groundTruthLastText": "L:   4 | P:  14 | LT01 | Expected single whitespace between comma ',' and numeric",
+    "linesBefore": 8,
+    "sanitizedBytes": 5459,
+    "sanitizedLines": 86,
+    "tags": [
+      "sql",
+      "wrapped-continuation"
+    ],
+    "tool": "sqlfluff",
+    "kind": [
+      "b",
+      "c"
+    ],
+    "failureType": "lint",
+    "sha256": "4c3e76686f2c30a40a02ec04a7ecda0d02b671b252034dadd16988ee16c64202"
+  },
+  "cpplint-done-flood.txt": {
+    "groundTruthLine": 30,
+    "groundTruthLastLine": 39,
+    "groundTruthText": "z_main.cc:3:  Missing space before {  [whitespace/braces] [5]",
+    "groundTruthLastText": "z_main.cc:8:  Missing space before {  [whitespace/braces] [5]",
+    "linesBefore": 29,
+    "sanitizedBytes": 1344,
+    "sanitizedLines": 41,
+    "tags": [
+      "cpp",
+      "progress-noise"
+    ],
+    "tool": "cpplint",
+    "kind": [
+      "a",
+      "b",
+      "c"
+    ],
+    "failureType": "lint",
+    "sha256": "0b783c291b41c793b328f160452751f42266a1402769eda552af68c2c10d8ce4"
+  },
+  "codespell-context.txt": {
+    "groundTruthLine": 3,
+    "groundTruthLastLine": 111,
+    "groundTruthText": "./changelog.md:1: teh ==> the",
+    "groundTruthLastText": "./notes.md:6: accomodate ==> accommodate",
+    "linesBefore": 2,
+    "sanitizedBytes": 4147,
+    "sanitizedLines": 111,
+    "tags": [
+      "spelling",
+      "context-lines"
+    ],
+    "tool": "codespell",
+    "kind": [
+      "b",
+      "c"
+    ],
+    "failureType": "lint",
+    "sha256": "be35b81fbd691913e712f3803662ec102370677d1fe3abe50213b8b73db3b9c7"
   }
 }
