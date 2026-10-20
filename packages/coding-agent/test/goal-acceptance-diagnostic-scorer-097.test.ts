@@ -101,11 +101,17 @@ describe("097 scorer rule", () => {
 describe("measureTwoWindowFixtures rule selection", () => {
 	const long = Array.from({ length: 80 }, (_, i) => (i === 50 ? "Error: boom" : `ok ${i + 1}`)).join("\n");
 
-	it("hard-stops on a fixture that fits the cap whole, under both rules", () => {
+	it("hard-stops on a fit-whole fixture whose excerpt is not the full fixture, under both rules", () => {
 		for (const rule of ["095", "097"] as const) {
 			expect(() =>
 				measureTwoWindowFixtures(
-					[{ file: "small", raw: "Error: x\nmore", truth: { groundTruthLine: 1, groundTruthLastLine: 1 } }],
+					[
+						{
+							file: "small",
+							raw: "\u001b[31mError: x\u001b[0m\nmore",
+							truth: { groundTruthLine: 1, groundTruthLastLine: 1 },
+						},
+					],
 					{ rule },
 				),
 			).toThrow(/fits the cap whole/);

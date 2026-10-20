@@ -10,6 +10,9 @@
  * 097 pass: both lines inside the emitted excerpt text (any window), not inside an elision marker.
  * Entries with `a1Excluded: true` are reference only: shown in the table, reported as "excluded",
  * and not counted in the A1 pass line or the exit code.
+ * A fixture that fits the cap whole and whose excerpt is byte-for-byte the full fixture is
+ * "full-display": excluded from the denominator (never PASS), count printed on its own line. Other fit-whole
+ * fixtures still hard stop.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -36,6 +39,7 @@ try {
 	console.table(rows.map(({ excerpt: _excerpt, ...row }) => row));
 	const tally = a1Tally(rows);
 	console.log(`rule ${rule}: pass ${tally.passed}/${tally.counted}`);
+	console.log(`full-display: ${tally.fullDisplay} (excluded from denominator)`);
 	if (tally.excluded > 0) console.log(`a1Excluded (reference only): pass ${tally.excludedPassed}/${tally.excluded}`);
 	process.exit(tally.passed === tally.counted ? 0 : 1);
 } catch (error) {

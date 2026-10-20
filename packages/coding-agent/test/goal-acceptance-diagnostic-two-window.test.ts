@@ -216,11 +216,15 @@ describe("spec 095 measurement hard stops", () => {
 		);
 		expect(() => measureTwoWindowFixtures([{ file: "a", raw: long, truth: {} }])).toThrow(/groundTruthLine/);
 	});
-	it("stops on any fixture that does not exceed the cap", () => {
+	it("stops on any fit-whole fixture whose excerpt is not the full fixture", () => {
 		expect(() =>
 			measureTwoWindowFixtures([
 				{ file: "ok", raw: long, truth: { groundTruthLine: 51, groundTruthLastLine: 51 } },
-				{ file: "small", raw: "Error: a\n", truth: { groundTruthLine: 1, groundTruthLastLine: 1 } },
+				{
+					file: "small",
+					raw: "\u001b[31mError: a\u001b[0m\n",
+					truth: { groundTruthLine: 1, groundTruthLastLine: 1 },
+				},
 			]),
 		).toThrow(/small: fits the cap whole/);
 	});

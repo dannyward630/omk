@@ -6,7 +6,11 @@
  * - "095": first line in window 1 and, when the last line differs, last line in window 2.
  * - "097": both ground-truth lines are inside the emitted excerpt text (any window,
  *   merged windows count), never inside an elision marker.
- * Both rules hard-stop on fixtures that fit the cap whole.
+ * Fixtures that fit the cap whole: if the emitted excerpt is byte-for-byte the whole
+ * fixture (raw file content minus trailing whitespace, the manifest's line convention)
+ * the row is "full-display": excluded from the denominator and reported separately
+ * (Tech Lead, 1.5.1 prereq), never counted as PASS; any other
+ * fit-whole fixture is still a hard stop.
  */
 import {
 	buildDiagnosticExcerpt,
@@ -48,6 +52,8 @@ export interface MeasureRow {
 	readonly lastShown: boolean;
 	/** Manifest `a1Excluded: true`: reference only, not counted toward A1 (holdout5 tool overlap). */
 	readonly a1Excluded: boolean;
+	/** Fixture fits the cap and the excerpt is byte-for-byte the whole fixture: not scored, reported separately. */
+	readonly fullDisplay: boolean;
 	readonly excerpt: DiagnosticExcerpt;
 }
 
@@ -56,20 +62,22 @@ export function isA1Excluded(truth: unknown): boolean {
 	return (truth as Record<string, unknown> | null)?.a1Excluded === true;
 }
 
-/** A1 tally: counted rows exclude `a1Excluded`; excluded rows are reported separately. */
+/** A1 tally: counted rows exclude `a1Excluded` and full-display rows; both are reported separately. */
 export function a1Tally(rows: readonly MeasureRow[]): {
 	readonly passed: number;
 	readonly counted: number;
 	readonly excludedPassed: number;
 	readonly excluded: number;
+	readonly fullDisplay: number;
 } {
-	const counted = rows.filter((row) => !row.a1Excluded);
-	const excluded = rows.filter((row) => row.a1Excluded);
+	const counted = rows.filter((row) => !row.a1Excluded && !row.fullDisplay);
+	const excluded = rows.filter((row) => row.a1Excluded && !row.fullDisplay);
 	return {
 		passed: counted.filter((row) => row.pass).length,
 		counted: counted.length,
 		excludedPassed: excluded.filter((row) => row.pass).length,
 		excluded: excluded.length,
+		fullDisplay: rows.filter((row) => row.fullDisplay).length,
 	};
 }
 
@@ -171,6 +179,11 @@ export function scoreFixture(
 	return { first: firstHit, last: lastHit, firstShown, lastShown, pass };
 }
 
+/** True when the excerpt is untruncated and byte-for-byte the fixture content (trailing whitespace trimmed). */
+export function isFullDisplay(excerpt: DiagnosticExcerpt, raw: string): boolean {
+	return !excerpt.truncated && excerpt.text === raw.replace(/\s+$/, "");
+}
+
 /** Throws (hard stop) on missing ground truth or any fixture that does not exceed the cap. */
 export function measureTwoWindowFixtures(
 	fixtures: readonly MeasureFixture[],
@@ -181,24 +194,27 @@ export function measureTwoWindowFixtures(
 		const first = lineField(fixture.truth, "groundTruthLine", fixture.file);
 		const last = lineField(fixture.truth, "groundTruthLastLine", fixture.file);
 		const text = sanitizeDiagnosticText(fixture.raw);
-		if (!exceedsCap(text)) {
+		const excerpt = buildDiagnosticExcerpt(diagnosticOutputFromText(text));
+		const fullDisplay = !exceedsCap(text) && isFullDisplay(excerpt, fixture.raw);
+		if (!exceedsCap(text) && !fullDisplay) {
 			throw new Error(
-				`${fixture.file}: fits the cap whole (<= ${GOAL_DIAGNOSTIC_MAX_BYTES} B and <= ${GOAL_DIAGNOSTIC_MAX_LINES} lines after sanitize)`,
+				`${fixture.file}: fits the cap whole (<= ${GOAL_DIAGNOSTIC_MAX_BYTES} B and <= ${GOAL_DIAGNOSTIC_MAX_LINES} lines after sanitize) and the excerpt is not the full fixture`,
 			);
 		}
-		return { ...fixture, first, last, text, a1Excluded: isA1Excluded(fixture.truth) };
+		return { ...fixture, first, last, text, excerpt, fullDisplay, a1Excluded: isA1Excluded(fixture.truth) };
 	});
-	return prepared.map(({ file, first, last, text, a1Excluded }) => {
-		const excerpt = buildDiagnosticExcerpt(diagnosticOutputFromText(text));
+	return prepared.map(({ file, first, last, text, excerpt, fullDisplay, a1Excluded }) => {
 		const score = scoreFixture(excerpt, text, first, last, rule);
 		return {
 			file,
 			...score,
+			pass: !fullDisplay && score.pass,
 			rule,
 			pattern: excerpt.mode,
 			fallback: excerpt.mode === "fallback",
 			passthrough: !excerpt.truncated,
 			a1Excluded,
+			fullDisplay,
 			excerpt,
 		};
 	});

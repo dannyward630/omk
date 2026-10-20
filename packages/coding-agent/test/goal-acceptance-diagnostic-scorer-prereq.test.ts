@@ -12,9 +12,11 @@ import {
 	isA1Excluded,
 	type MeasureRow,
 	manifestFixtures,
+	measureTwoWindowFixtures,
 } from "../src/core/goal-acceptance-diagnostic-measure.ts";
 
-const row = (pass: boolean, a1Excluded: boolean) => ({ pass, a1Excluded }) as unknown as MeasureRow;
+const row = (pass: boolean, a1Excluded: boolean, fullDisplay = false) =>
+	({ pass, a1Excluded, fullDisplay }) as unknown as MeasureRow;
 
 describe("a1Excluded", () => {
 	it("only the literal true excludes", () => {
@@ -26,7 +28,7 @@ describe("a1Excluded", () => {
 
 	it("excluded rows are not counted toward A1, and are reported separately", () => {
 		const tally = a1Tally([row(true, false), row(true, false), row(false, true), row(true, true)]);
-		expect(tally).toEqual({ passed: 2, counted: 2, excludedPassed: 1, excluded: 2 });
+		expect(tally).toEqual({ passed: 2, counted: 2, excludedPassed: 1, excluded: 2, fullDisplay: 0 });
 	});
 
 	it("a failing counted row still fails A1 even when excluded rows pass", () => {
@@ -65,4 +67,49 @@ describe.each(["goal-diagnostics-holdout", "goal-diagnostics-holdout2"])("%s gro
 			expect(lines[last - 1]).toBe(truth.groundTruthLastText);
 		},
 	);
+});
+
+describe("full-display rule (fit-whole fixture, excerpt identical to the fixture)", () => {
+	const truth = { groundTruthLine: 2, groundTruthLastLine: 2 };
+
+	it.each(["095", "097"] as const)(
+		"identical -> full-display, not PASS, excluded from denominator (rule %s)",
+		(rule) => {
+			const [result] = measureTwoWindowFixtures([{ file: "tiny", raw: "start\nError: boom\nend\n", truth }], {
+				rule,
+			});
+			expect(result.fullDisplay).toBe(true);
+			expect(result.pass).toBe(false);
+			expect(result.excerpt.truncated).toBe(false);
+			const tally = a1Tally([result]);
+			expect(tally).toMatchObject({ passed: 0, counted: 0, fullDisplay: 1 });
+		},
+	);
+
+	it("non-identical small fixture (sanitize changes it) -> existing hard stop", () => {
+		expect(() =>
+			measureTwoWindowFixtures([{ file: "ansi", raw: "start\n\u001b[31mError: boom\u001b[0m\nend\n", truth }], {
+				rule: "097",
+			}),
+		).toThrow(/ansi: fits the cap whole/);
+	});
+
+	it("over-cap fixtures are never full-display", () => {
+		const long = Array.from({ length: 80 }, (_, i) => (i === 50 ? "Error: boom" : `ok ${i + 1}`)).join("\n");
+		const [result] = measureTwoWindowFixtures(
+			[{ file: "long", raw: long, truth: { groundTruthLine: 51, groundTruthLastLine: 51 } }],
+			{ rule: "097" },
+		);
+		expect(result.fullDisplay).toBe(false);
+	});
+
+	it("tally removes full-display rows from every denominator and counts them separately", () => {
+		expect(a1Tally([row(false, false, true), row(false, true, true), row(true, false), row(false, true)])).toEqual({
+			passed: 1,
+			counted: 1,
+			excludedPassed: 0,
+			excluded: 1,
+			fullDisplay: 2,
+		});
+	});
 });
