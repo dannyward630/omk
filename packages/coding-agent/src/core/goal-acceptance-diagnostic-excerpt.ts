@@ -1,5 +1,5 @@
 /** Spec 094 head/tail and spec 095 two-window excerpts. */
-import { fitTail, fitWindow, fitWindow1, marker, trimContext } from "./goal-acceptance-diagnostic-fit.ts";
+import { dropCutLine, fitTail, fitWindow, fitWindow1, marker, trimContext } from "./goal-acceptance-diagnostic-fit.ts";
 import {
 	firstLines,
 	GOAL_DIAGNOSTIC_HEAD_BYTES,
@@ -22,6 +22,7 @@ function twoWindowExcerpt(anchor: DiagnosticAnchor): DiagnosticExcerpt {
 	const out: string[] = [];
 	const w1 = fitWindow1(anchor.first ?? anchor.head);
 	const w1Source = w1.window;
+	if (anchor.v3) dropCutLine(w1);
 	if (w1.lead) out.push(w1.lead);
 	out.push(...w1.lines);
 	const w1End = w1Source.startLine + w1.count - 1;

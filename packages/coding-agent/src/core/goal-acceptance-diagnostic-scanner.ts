@@ -1,5 +1,5 @@
 /** Spec 095 streaming anchor scanner. */
-import { fitWindow1 } from "./goal-acceptance-diagnostic-fit.ts";
+import { dropCutLine, fitWindow1 } from "./goal-acceptance-diagnostic-fit.ts";
 import {
 	injectionRuleFor,
 	matchErrorLine,
@@ -18,6 +18,7 @@ import {
 	utf8Bytes,
 } from "./goal-acceptance-diagnostic-text.ts";
 import type { DiagnosticAnchor, DiagnosticWindow } from "./goal-acceptance-diagnostic-types.ts";
+import { classifyV3Line, goalDiagnosticsV3Enabled } from "./goal-acceptance-diagnostic-v3.ts";
 
 interface Line {
 	readonly no: number;
@@ -58,6 +59,17 @@ export class AnchorScanner {
 	 * anchoring. Lines rejected by R1–R4 count as nonexistent (spec 095, Tech Lead decision 2).
 	 */
 	private errorMatched = false;
+	/** Spec 097 (OMK_GOAL_DIAGNOSTICS_V3); off keeps the 095 scanner byte for byte. */
+	private readonly v3: boolean;
+	/** V3 D5: warnings anchor only when no error/shape line exists anywhere. */
+	private warnFirst: Pending | undefined;
+	private warnLast: Pending | undefined;
+	/** V3 D4: first non-empty line that is not a known-format info/warning log line. */
+	private fallback: Pending | undefined;
+
+	constructor(options: { readonly v3?: boolean } = {}) {
+		this.v3 = options.v3 ?? goalDiagnosticsV3Enabled();
+	}
 
 	push(sanitized: string): void {
 		const parts = sanitized.split("\n");
@@ -77,8 +89,14 @@ export class AnchorScanner {
 		if (this.partialBytes > 0) this.line(this.partial, this.partialBytes);
 		this.partial = "";
 		this.partialBytes = 0;
-		const winner = this.last ?? (this.errorMatched ? undefined : this.summary);
+		if (this.v3 && this.last === undefined && this.warnLast !== undefined) {
+			this.first = this.warnFirst;
+			this.last = this.warnLast;
+		}
+		const winner =
+			this.last ?? (this.errorMatched ? undefined : this.summary) ?? (this.v3 ? this.fallback : undefined);
 		if (winner === undefined) return undefined;
+		const firstPending = this.first ?? (this.v3 ? this.fallback : undefined);
 		const toWindow = (pending: Pending): DiagnosticWindow => ({
 			line: pending.line,
 			pattern: pending.pattern,
@@ -86,10 +104,10 @@ export class AnchorScanner {
 			skippedBytes: pending.skippedBytes,
 			lines: [...pending.lines],
 		});
-		const first = this.first ? toWindow(this.first) : undefined;
+		const first = firstPending ? toWindow(firstPending) : undefined;
 		let last: DiagnosticWindow = toWindow(winner);
 		// The last candidate inside window 1 (or no distinct last candidate) -> window 2 = tail.
-		if (first && (this.last === this.first || winner.line < first.startLine + this.keptLines(first))) {
+		if (first && (winner === firstPending || winner.line < first.startLine + this.keptLines(first))) {
 			last = this.tailWindow();
 		}
 		return {
@@ -98,13 +116,16 @@ export class AnchorScanner {
 			head: { pattern: "head", startLine: 1, skippedBytes: 0, lines: [...this.headLines] },
 			totalLines: this.lineNo,
 			totalBytes: this.offset,
+			...(this.v3 ? { v3: true as const } : {}),
 			pattern: first?.pattern ?? winner.pattern,
 		};
 	}
 
 	/** Lines of `window` that fit window 1's share. */
 	private keptLines(window: DiagnosticWindow): number {
-		return fitWindow1(window).count;
+		const fit = fitWindow1(window);
+		if (this.v3) dropCutLine(fit);
+		return fit.count;
 	}
 
 	private tailWindow(): DiagnosticWindow {
@@ -131,11 +152,20 @@ export class AnchorScanner {
 		this.tailLines.push(current);
 		if (this.tailLines.length > GOAL_DIAGNOSTIC_WINDOW2_LINES) this.tailLines.shift();
 
-		for (const pending of new Set([this.first, this.last, this.summary])) {
+		for (const pending of new Set([
+			this.first,
+			this.last,
+			this.summary,
+			this.warnFirst,
+			this.warnLast,
+			this.fallback,
+		])) {
 			if (pending && pending.line !== current.no) this.extend(pending, text);
 		}
-		const candidate = this.candidate(text);
-		if (candidate !== undefined) {
+		const candidate = this.v3 ? undefined : this.candidate(text);
+		if (this.v3) {
+			this.lineV3(current, text);
+		} else if (candidate !== undefined) {
 			const pending = this.open(candidate, current);
 			if (this.first === undefined) this.first = pending;
 			this.last = pending;
@@ -147,6 +177,30 @@ export class AnchorScanner {
 		}
 		this.before.push(current);
 		if (this.before.length > GOAL_DIAGNOSTIC_ANCHOR_CONTEXT_LINES) this.before.shift();
+	}
+
+	/** Spec 097 D1–D5 for one line. */
+	private lineV3(current: Line, text: string): void {
+		const { kind, pattern } = classifyV3Line(text);
+		const rule = injectionRuleFor(text);
+		if ((kind === "error" || kind === "shape") && rule === undefined && this.underRepeatCap(text)) {
+			this.errorMatched = true;
+			const pending = this.open(pattern, current);
+			if (this.first === undefined) this.first = pending;
+			this.last = pending;
+		} else if (kind === "warning" && (rule === undefined || rule === "R1-log-level") && this.underRepeatCap(text)) {
+			const pending = this.open(pattern, current);
+			if (this.warnFirst === undefined) this.warnFirst = pending;
+			this.warnLast = pending;
+		} else if (kind === "none" && pattern !== "d3-success" && !this.errorMatched) {
+			const summary = matchSummaryLine(text);
+			if (summary !== undefined && rule === undefined && this.underRepeatCap(text)) {
+				this.summary = this.open(summary, current);
+			}
+		}
+		if (this.fallback === undefined && kind !== "skip" && text.trim() !== "") {
+			this.fallback = this.open("d4-fallback", current, []);
+		}
 	}
 
 	/** Error pattern + success exclusions + R1–R4. */
@@ -166,8 +220,7 @@ export class AnchorScanner {
 		return true;
 	}
 
-	private open(pattern: string, current: Line): Pending {
-		const context = this.before;
+	private open(pattern: string, current: Line, context: readonly Line[] = this.before): Pending {
 		const startLine = context[0]?.no ?? current.no;
 		const skippedBytes = context[0]?.offset ?? current.offset;
 		const pending: Pending = { line: current.no, pattern, startLine, skippedBytes, lines: [], bytes: 0 };

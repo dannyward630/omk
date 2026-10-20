@@ -24,6 +24,8 @@ export interface DiagnosticAnchor {
 	readonly totalBytes: number;
 	/** First candidate pattern, or the summary pattern. */
 	readonly pattern: string;
+	/** Spec 097: set only when OMK_GOAL_DIAGNOSTICS_V3 scanned this output. */
+	readonly v3?: true;
 }
 
 export interface DiagnosticOutput {

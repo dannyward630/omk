@@ -50,6 +50,17 @@ export type {
 	DiagnosticOutput,
 	DiagnosticWindow,
 } from "./goal-acceptance-diagnostic-types.ts";
+export {
+	classifyV3Line,
+	d4Skips,
+	GOAL_DIAGNOSTIC_V3_FAILURE_MARKERS,
+	GOAL_DIAGNOSTIC_V3_SHAPE,
+	GOAL_DIAGNOSTIC_V3_SUCCESS_MARKERS,
+	goalDiagnosticsV3Enabled,
+	knownFormatLevel,
+	type V3LineClass,
+	type V3LineKind,
+} from "./goal-acceptance-diagnostic-v3.ts";
 
 export interface AcceptanceDiagnosticInput {
 	readonly receiptId: string;

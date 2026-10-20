@@ -95,3 +95,16 @@ export function fitTail(
 	const skipped = lines.slice(0, lines.length - out.length).reduce((sum, line) => sum + utf8Bytes(line) + 1, 0);
 	return { lines: out, skipped };
 }
+
+/**
+ * Spec 097: a window-1 line cut at the cap (after the anchor line) is dropped whole, so it is
+ * either elided by the middle marker or shown whole by window 2, never half-shown.
+ */
+export function dropCutLine(w1: ReturnType<typeof fitWindow1>): void {
+	const anchorIndex = w1.window.line === undefined ? -1 : w1.window.line - w1.window.startLine;
+	if (!w1.cut || w1.count - 1 <= anchorIndex || w1.count < 2) return;
+	w1.lines.pop();
+	w1.count--;
+	w1.used -= utf8Bytes(sanitizeDiagnosticText(w1.window.lines[w1.count])) + 1;
+	w1.cut = false;
+}

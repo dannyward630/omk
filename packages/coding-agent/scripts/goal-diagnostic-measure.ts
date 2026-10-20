@@ -6,11 +6,12 @@
  * field or any fixture fits the cap whole (<= 1,536 B and <= 40 lines after
  * sanitize): such fixtures are invalid under spec 095 and must be replaced.
  * 095 pass: first line in window 1 and, when the last line differs, last line in window 2.
+ * Top-level `authorDeclaration` (a string) is skipped. Set OMK_GOAL_DIAGNOSTICS_V3=1 to measure excerpt v3.
  * 097 pass: both lines inside the emitted excerpt text (any window), not inside an elision marker.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type MeasureRule, measureTwoWindowFixtures } from "../src/core/goal-acceptance-diagnostic-measure.ts";
+import { type MeasureRule, manifestFixtures, measureTwoWindowFixtures } from "../src/core/goal-acceptance-diagnostic-measure.ts";
 
 const args = process.argv.slice(2);
 const ruleArg = args.find((arg) => arg.startsWith("--rule="))?.slice("--rule=".length) ?? "095";
@@ -27,7 +28,7 @@ if (!dir) {
 const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as Record<string, unknown>;
 try {
 	const rows = measureTwoWindowFixtures(
-		Object.entries(manifest).map(([file, truth]) => ({ file, raw: readFileSync(join(dir, file), "utf8"), truth })),
+		manifestFixtures(manifest, (file) => readFileSync(join(dir, file), "utf8")),
 		{ rule },
 	);
 	console.table(rows.map(({ excerpt: _excerpt, ...row }) => row));

@@ -178,3 +178,16 @@ export function measureTwoWindowFixtures(
 		};
 	});
 }
+
+/** Top-level manifest key that holds the author's blindness statement, not a fixture (spec 097 holdout4). */
+export const MANIFEST_AUTHOR_DECLARATION = "authorDeclaration";
+
+/**
+ * Manifest entries as fixtures: skips the top-level `authorDeclaration` string and reads each
+ * listed file. Ground-truth lines are 1-based on `content.split("\n")`; caps apply after trimming trailing whitespace.
+ */
+export function manifestFixtures(manifest: Record<string, unknown>, read: (file: string) => string): MeasureFixture[] {
+	return Object.entries(manifest)
+		.filter(([key, value]) => !(key === MANIFEST_AUTHOR_DECLARATION && typeof value === "string"))
+		.map(([file, truth]) => ({ file, raw: read(file), truth }));
+}
