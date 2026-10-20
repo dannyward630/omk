@@ -317,3 +317,44 @@ describe("spec 097 holdout manifest loader", () => {
 		expect(lineShown(excerpt, line - 1, text) && lineShown(excerpt, line + 1, text)).toBe(true);
 	});
 });
+
+describe("spec 097 amendment 2", () => {
+	it("spec 097 amendment 2: window-1 line cut at cap is dropped whole", () => {
+		const a = "FAIL src/a.test.ts > parses";
+		const b = `FAIL src/b.test.ts > ${"expected value ".repeat(50).trim()}`;
+		const { text, at } = doc(
+			[...noise(10), a, "  context line one", "  context line two", b, ...noise(5, "tail")],
+			a,
+			b,
+		);
+		const source = text.split("\n");
+
+		// Flag on: no partial line inside window 1, no cut marker, and b (second answer line) still matches.
+		const on = v3(text);
+		// Window 1 (everything before b) holds whole source lines only; no cut marker sits between a and b.
+		const emitted = on.text.split("\n");
+		const bAt = emitted.findIndex((line) => line.length > 30 && b.startsWith(line));
+		const aAt = emitted.indexOf(a);
+		expect(aAt).toBeGreaterThanOrEqual(0);
+		expect(bAt).toBeGreaterThan(aAt);
+		for (const line of emitted.slice(0, bAt)) if (!line.startsWith("[… ")) expect(source).toContain(line);
+		expect(emitted.slice(aAt, bAt).some((line) => line.startsWith("[… "))).toBe(false);
+		expect(emitted.filter((line) => line.length > 30 && b.startsWith(line))).toHaveLength(1);
+		// The dropped line starts window 2 instead of being half-shown at the end of window 1.
+		expect(on.windows).toHaveLength(2);
+		expect(on.windows?.[0][1]).toBe(at[1] - 1);
+		expect(on.windows?.[1][0]).toBe(at[1]);
+		expect(emitted.slice(bAt + 1, bAt + 3).filter((line) => line.startsWith("[… "))).toHaveLength(1);
+		expect(lineShown(on, at[0], text)).toBe(true);
+		expect(lineShown(on, at[1], text)).toBe(true);
+		expectCaps(on.text);
+
+		// Flag off: 095 behaviour unchanged (same excerpt as with the flag unset; b is cut, not dropped).
+		vi.stubEnv("OMK_GOAL_DIAGNOSTICS_V3", "0");
+		const off = buildDiagnosticExcerpt(diagnosticOutputFromText(text));
+		vi.unstubAllEnvs();
+		const unset = buildDiagnosticExcerpt(diagnosticOutputFromText(text));
+		expect(off).toEqual(unset);
+		expect(off.text.split("\n").some((line) => line !== b && line.length > 30 && b.startsWith(line))).toBe(true);
+	});
+});
