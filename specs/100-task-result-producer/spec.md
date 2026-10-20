@@ -1,7 +1,7 @@
 # Spec 100 — task_result real producer wiring
 
 Status: draft (spec only, no implementation)
-Base: `origin/main` @ `63bbd20b4f` (PR #175, spec 096 merged). **PR #177 (spec 099, head `46539fbcde`) was not on main at fetch time**; `6df371131f` is already pushed and force-push is forbidden, so this branch will **not** be rebased. After #177 merges, a fresh branch off the new main will carry these spec commits via cherry-pick (no force-push).
+Base: `origin/main` @ `63bbd20b4f` (PR #175, spec 096 merged). **PR #177 (spec 099, head `46539fbcde`) was not on main at fetch time**; `6df371131f` is already pushed and force-push is forbidden, so this branch will **not** be rebased. After #177 merges, a fresh branch off the new main will carry these spec commits via cherry-pick; once its PR is open it follows main by merging main in (no rebase, no force-push).
 Source: 인호's audit, section F2 ("task_result의 분류 입력을 실제 생산자에 연결").
 
 ## 1. Problem (all refs are `63bbd20b4f`)
@@ -28,7 +28,7 @@ Behind `OMK_TASK_RESULT` (existing flag, `task-result.ts:106-108`); see §4.
 - `TaskCheckFact` gains optional `checkKind`, `tests` (each count `number | "unknown"`), `checkId`, `attempt`.
 - Rules (in order after existing failed/aborted/timeout/completeness/gate):
   - `test_runner` and `matched === 0` → `insufficient/zero_tests`.
-  - `test_runner` and counts unparseable (`matched` unknown) → `insufficient/unverified_counts` (proposed new reason; **choice for Tech Lead**: new reason vs. reusing `insufficient/unavailable`). Never `passed`.
+  - `test_runner` and counts unparseable (`matched` unknown) → `insufficient/unverified_counts` (decided, Decision 7). Never `passed`.
   - workspace sha differs → `insufficient/stale`.
   - `completion === "refused"` → `insufficient/completion_refused` (new reason) with `refusalReason`.
 - `projectCoverage`: `checksTotal = 1` per approved command (decided); no approved command → `checksTotal: "unknown"` with `receiptsObserved: n`. Never `0`.
@@ -51,14 +51,15 @@ Harness: a real `GoalAcceptanceFlow` + `GoalController` in a temp git repo with 
 | # | Case | Expected projection (all 3 surfaces) |
 |---|------|--------------------------------------|
 | 1 | fail→fix: approved `node --test`, first run 1 failing test, edit, rerun passes | final `check: passed`, `tests {executed:1, matched:1, skipped:0}`, `checkKind:test_runner`, one `checkId` with `attempts.length === 2` (failed, passed), `coverage 1/1`; goal completed |
-| 2 | external edit: pass, then file edited before `complete()` | `stale` if the edit is seen at publish; otherwise `completion_refused` (reasons stay separate, decided), refusalReason contains "workspace changed"; final status never `passed`; goal stays active |
+| 2a | external edit after the check, before publish (hook `afterCheckBeforePublish`) | `insufficient/stale`; no `passed` fact emitted; goal stays active |
 | 2b | 099 revision refusal: pass under A, command changed to B before complete | `insufficient/completion_refused`; never `passed` |
+| 2c | external edit after publish, before `complete()` (hook `afterPublishBeforeComplete`) | `passed` fact, then downgrade to `insufficient/completion_refused`, refusalReason contains "workspace changed"; final status never `passed`; goal stays active |
 | 3 | not run: approved command, run settles without a check | `insufficient/not_run`, `coverage 0/1`. 3b: no approved command → `checksTotal ?` with `receiptsObserved:0`; never `0/0` |
 | 4 | 0 tests: runner filter matches nothing, exit 0 | `insufficient/zero_tests` (never `passed`), `tests.matched: 0`; completion behavior unchanged (blocking decided later from data) |
-| 4b | unparseable runner output, exit 0 | `insufficient/unverified_counts` (name is a Tech Lead choice), counts rendered `?`; never `passed` on any surface |
+| 4b | unparseable runner output, exit 0 | `insufficient/unverified_counts`, counts rendered `?`; never `passed` on any surface |
 | 5 | cancel: Esc during check | `cancelled`; no `passed` fact ever emitted for that attempt (asserted on full RPC event stream) |
 
-Downgrade timing (cases 2, 2b): when `complete()` refuses, one downgrade event for the earlier pass fact (same `checkId`/`attempt`) is emitted at that moment and observed identically on TUI, print and RPC — same status, reason and `refusalReason`, asserted on each surface before the next turn begins. Parsers: ≥2 real-output fixtures each for node:test, vitest, jest; a fixture with skipped tests shows `skipped` without changing status.
+Edit ordering (2a, 2c) is reproduced deterministically through a fixed test-only hook in the producer (`afterCheckBeforePublish` / `afterPublishBeforeComplete`), with no sleeps or timing. Downgrade timing (cases 2b, 2c): when `complete()` refuses, one downgrade event for the earlier pass fact (same `checkId`/`attempt`) is emitted at that moment and observed identically on TUI, print and RPC — same status, reason and `refusalReason`, asserted on each surface before the next turn begins. Parsers: ≥2 real-output fixtures each for node:test, vitest, jest; a fixture with skipped tests shows `skipped` without changing status.
 
 Also: flag off → zero `task_result` events and byte-identical print golden to `63bbd20b4f`; full coding-agent suite green; no new dependencies.
 
@@ -82,7 +83,7 @@ Flag off restores 096 behavior (no events). Code rollback: revert the merge; `Go
 4. `stale` and `completion_refused` stay separate; refusal downgrade must reach TUI/print/RPC identically at that moment.
 5. `skipped` is display-only.
 6. vitest/jest counts are parsed from output text only; no reporter packages or runners are added, not even as devDependencies. The e2e uses node:test only, so new dependencies stay 0.
+7. Unparseable counts use `insufficient/unverified_counts` (not `unavailable`), to keep parser defects separate from environment unavailability.
 
 ## 8. Open questions
-1. Base: after #177 merges, cherry-pick these spec commits onto a fresh branch off the new main (no rebase, no force-push); needed for `checkRevision` and case 2b.
-2. Status name for unparseable counts: new `insufficient/unverified_counts` (proposed) vs. reuse `insufficient/unavailable`.
+None open; base plan and status name are decided (header, Decision 7).
