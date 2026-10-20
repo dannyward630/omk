@@ -1,7 +1,7 @@
 # Spec 100 — task_result real producer wiring
 
 Status: draft (spec only, no implementation)
-Base: `origin/main` @ `63bbd20b4f` (PR #175, spec 096 merged). **PR #177 (spec 099, head `46539fbcde`) was not on main at fetch time**; this branch will be rebased onto main after #177 merges, before implementation.
+Base: `origin/main` @ `63bbd20b4f` (PR #175, spec 096 merged). **PR #177 (spec 099, head `46539fbcde`) was not on main at fetch time**; `6df371131f` is already pushed and force-push is forbidden, so this branch will **not** be rebased. After #177 merges, a fresh branch off the new main will carry these spec commits via cherry-pick (no force-push).
 Source: 인호's audit, section F2 ("task_result의 분류 입력을 실제 생산자에 연결").
 
 ## 1. Problem (all refs are `63bbd20b4f`)
@@ -81,7 +81,8 @@ Flag off restores 096 behavior (no events). Code rollback: revert the merge; `Go
 3. Count parsing: node:test, vitest, jest only, ≥2 real fixtures each. Parse failure → counts unknown and never pass.
 4. `stale` and `completion_refused` stay separate; refusal downgrade must reach TUI/print/RPC identically at that moment.
 5. `skipped` is display-only.
+6. vitest/jest counts are parsed from output text only; no reporter packages or runners are added, not even as devDependencies. The e2e uses node:test only, so new dependencies stay 0.
 
 ## 8. Open questions
-1. Base: rebase onto main after #177 merges (needed for `checkRevision` and case 2b).
+1. Base: after #177 merges, cherry-pick these spec commits onto a fresh branch off the new main (no rebase, no force-push); needed for `checkRevision` and case 2b.
 2. Status name for unparseable counts: new `insufficient/unverified_counts` (proposed) vs. reuse `insufficient/unavailable`.
