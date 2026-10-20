@@ -59,7 +59,8 @@ Fixtures that fit the cap whole are invalid (hard stop), as in 095.
 |---|---|---|
 | A1 | holdout4 (≥10 fixtures) | **10/10** by the rule above |
 | A2 | holdout1 + holdout2 + holdout3 (regression floor, training) | ≥ 28/30 by the same rule **and** first error line (`groundTruthLine`) shown in 30/30 (no regression) |
-| A3 | flag off | byte-identical to main on all existing goal-diagnostics fixtures |
+| A3a | all diagnostics flags off | output byte-identical to main on all existing goal-diagnostics fixtures |
+| A3b | only `OMK_GOAL_DIAGNOSTICS_V3` off | output byte-identical to the 095 branch head (`feat/095-two-window-excerpt`) on the same fixtures |
 | A4 | caps | every excerpt ≤ 1,536 B and ≤ 40 lines |
 | A5 | unit | decoy (success line containing "error") never anchors |
 | A6 | unit | D4 known-format tests (skip info/warning; never skip error/fatal; unlisted format not skipped) |
@@ -79,7 +80,7 @@ it is **not** evidence for default-on. Default-on is decided separately, on a la
 2. Scorer change + **unit tests asserting the scorer implements the 097 rule exactly** (inside-excerpt, merged windows count, elision markers don't, hard stop on fits-whole). Before any implementation commit.
 3. **holdout4** committed: ≥10 new fixtures, authored by **Bench Analyst outside the team room**. Room members
    (Harness Engineer, Agent Researcher, Library Scout, PR Architect, Tech Lead, OMK) are not blind, since D1–D5 were posted there.
-   The author receives only the format conditions (`/workspace/holdout4-request.md`), never D1–D5 or any pattern; manifest with 1-based `groundTruthLine`/`groundTruthLastLine`; ≥3 decoy, ≥2 keyword-less, ≥2 warnings-first, ≥2 ">24-before", at least 5 tools not in holdout1-3.
+   The author receives only the format conditions (`/workspace/holdout4-request.md`), never D1–D5 or any pattern; manifest with 1-based `groundTruthLine`/`groundTruthLastLine`; at least 5 tools not in holdout1-3. Minimum counts (exactly as sent to Bench Analyst): >24 lines before the first error ≥4; error-like text on a non-error line ≥3; real failure line with no error keyword ≥2; failure shown only in the end summary ≥1. Each fixture entry has a `kind` field naming its type(s). manifest.json has a top-level `authorDeclaration` string attesting the author did not read spec 097, PR #174, or any `spec/097-*` branch before writing the fixtures.
 4. Implementation (flag-gated).
 5. **Single measurement** of holdout4 at the implementation head. FAIL ⇒ result recorded, no retune, new spec.
 
