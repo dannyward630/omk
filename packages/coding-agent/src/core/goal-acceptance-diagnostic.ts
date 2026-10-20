@@ -232,7 +232,10 @@ export class AnchorScanner {
 	private last: Pending | undefined;
 	private summary: Pending | undefined;
 	private readonly seen = new Map<string, number>();
-	/** Any error pattern matched (before R1–R4); disables summary anchoring (Tech Lead rule). */
+	/**
+	 * An error pattern matched on a line that survived R1–R4; disables summary
+	 * anchoring. Lines rejected by R1–R4 count as nonexistent (spec 095, Tech Lead decision 2).
+	 */
 	private errorMatched = false;
 
 	push(sanitized: string): void {
@@ -328,9 +331,10 @@ export class AnchorScanner {
 	/** Error pattern + success exclusions + R1–R4. */
 	private candidate(text: string): string | undefined {
 		const pattern = matchErrorLine(text);
-		if (pattern !== undefined) this.errorMatched = true;
 		if (pattern === undefined || injectionRuleFor(text) !== undefined) return undefined;
-		return this.underRepeatCap(text) ? pattern : undefined;
+		if (!this.underRepeatCap(text)) return undefined;
+		this.errorMatched = true;
+		return pattern;
 	}
 
 	private underRepeatCap(text: string): boolean {

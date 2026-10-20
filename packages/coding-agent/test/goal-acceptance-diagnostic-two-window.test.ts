@@ -136,11 +136,49 @@ describe("spec 095 windows", () => {
 		expect(w1).not.toContain("  1 failing");
 		expect(w1[0]).toBe("noise line 0 with some ordinary build output");
 		expect(w2).toContain("  1 failing");
-		// With an error pattern anywhere (even R1-rejected), the summary never anchors.
-		const mixed = `${noise(50)}\n  1 failing\n${noise(30, "end")}\n[WARN] Error: x\n`;
-		expect(excerptOf(mixed).mode).toBe("fallback");
+		// A real (unrejected) error pattern anywhere disables summary anchoring.
 		const real = `${noise(50)}\n  1 failing\n${noise(30, "end")}\nTypeError: real\n${noise(30, "z")}\n`;
 		expect(excerptOf(real).mode).toBe("named-error");
+	});
+
+	it("decision 2: lines rejected by R1–R4 count as nonexistent for summary anchoring", () => {
+		// Positive: one fake [WARN] Error: line (R1) + summary line -> summary still anchors window 2.
+		const fake = `${noise(50)}\n  1 failing\n${noise(30, "end")}\n[WARN] Error: x\n${noise(30, "z")}\n`;
+		const excerpt = excerptOf(fake);
+		expect(excerpt.mode).toBe("summary-failing");
+		const { w1, w2 } = windowsOf(excerpt.text);
+		expect(w1[0]).toBe("noise line 0 with some ordinary build output");
+		expect(w2).toContain("  1 failing");
+		expect(w2).not.toContain("[WARN] Error: x");
+		// Fake line before the summary, and R2/R3/R4 rejections, are also ignored.
+		const many = [
+			noise(20),
+			"[WARN] Error: early",
+			"> Error: quoted",
+			"Error: timeout, retrying",
+			...Array.from({ length: 3 }, (_, i) => `Error: flaky ${i}`),
+			noise(40, "mid"),
+			"Error: flaky 9",
+			noise(10, "pre"),
+			"  2 failing",
+			noise(30, "end"),
+		].join("\n");
+		// The first three "Error: flaky N" are real candidates, so they still win; only the 4th is R4-rejected.
+		expect(excerptOf(many).mode).not.toBe("summary-failing");
+		const rejectedOnly = [
+			noise(20),
+			"[WARN] Error: early",
+			"> Error: quoted",
+			"Error: timeout, retrying",
+			noise(40, "mid"),
+			"  2 failing",
+			noise(30, "end"),
+		].join("\n");
+		expect(excerptOf(rejectedOnly).mode).toBe("summary-failing");
+		// Negative: a surviving error line still disables summary anchoring.
+		const survivor = `${noise(50)}\n  1 failing\n${noise(30, "end")}\n[WARN] Error: x\nError: real\n${noise(30, "z")}\n`;
+		expect(excerptOf(survivor).mode).not.toBe("summary-failing");
+		expect(windowsOf(excerptOf(survivor).text).w1).toContain("Error: real");
 	});
 
 	it("no candidate -> 094 head/tail fallback; small output passes through", () => {
