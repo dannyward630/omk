@@ -73,7 +73,7 @@ the same pattern `SessionTurnAdmission` already uses. Private fields stay on the
 
 ## 5. Proof of neutrality
 
-- Full `npm test` and `test/suite/` pass with **zero test file changes**.
+- Full `npm test` and `test/suite/` pass with **no existing test file changed**.
 - `npm run check` passes (module size, import cycles, dep tree, Biome, types).
 - **Whole-sequence byte equality:** a harness runs a fixed set of scenarios (plain prompt, MCP tools
   over budget, forced compaction, retry after a transient error) against a recording faux provider on
