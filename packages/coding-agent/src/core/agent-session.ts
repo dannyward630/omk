@@ -190,6 +190,7 @@ function firstTextContent(result: unknown): string | undefined {
 }
 
 import { createImmutableMessageSnapshot } from "./agent-session-snapshot.ts";
+import { installTurnAdmission, type TurnAdmissionSession } from "./agent-session-turn-admission-host.ts";
 import {
 	DeferredTurnInput,
 	inputAlreadyHandled,
@@ -292,7 +293,7 @@ import {
 	type SessionTermination,
 	type SessionTerminationCause,
 } from "./session-termination.ts";
-import { SessionTurnAdmission } from "./session-turn-admission.ts";
+import type { SessionTurnAdmission } from "./session-turn-admission.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
@@ -300,7 +301,6 @@ import { type BuildSystemPromptOptions, buildSystemPromptPlan } from "./system-p
 import { PrefixBoundaryCauseHolder } from "./system-prompt-cache-boundary.ts";
 import * as taskResultWiring from "./task-result-collector.ts";
 import { todoControlState } from "./todo-runtime-state.ts";
-import { mcpToolGroup } from "./tool-schema-budget.ts";
 import { type BashOperations, type BashSandboxPreflight, createLocalBashOperations } from "./tools/bash.ts";
 import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
@@ -892,22 +892,7 @@ export class AgentSession {
 				(messages, window) => this._effectiveTurnContextWindow(messages, window),
 				() => getLatestCompactionEntry(this.sessionManager.getBranch())?.timestamp,
 			);
-			// One tool selection serves admission and the admitted run: MCP servers the model's input
-			// budget cannot carry are withheld per request, never removed from the active tool set.
-			this._turnAdmission = new SessionTurnAdmission({
-				model: () => this.model,
-				state: () => this.agent.state,
-				contextWindow: (pending, window) => this._effectiveTurnContextWindow([...pending], window),
-				compactionSettings: () => this.settingsManager.getCompactionSettings(),
-				latestCompactionTimestamp: () => getLatestCompactionEntry(this.sessionManager.getBranch())?.timestamp,
-				toolGroup: (name) => (this._mcpToolNames.has(name) ? mcpToolGroup(name) : undefined),
-				compact: async () => {
-					await this._runThresholdCompaction(true);
-					this._runBudget.assertActive();
-				},
-				notify: (message) => this._extensionRunner.getUIContext().notify(message, "warning"),
-			});
-			this.agent.prepareTools = (tools, pending) => this._turnAdmission.fitTools(tools, pending);
+			this._turnAdmission = installTurnAdmission(this as unknown as TurnAdmissionSession);
 		} catch (error) {
 			const ownedLease = this._ownedSessionOwnerLease;
 			if (ownedLease) {
