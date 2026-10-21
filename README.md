@@ -435,7 +435,7 @@ correctness proofs or OMK harness benchmark results.
 
 <sub>The AdaptOrch name and marks identify that separate proprietary product
 and appear here with permission. They are excluded from this repository's MIT
-grant — see [LICENSE](LICENSE).</sub>
+grant — see [TRADEMARKS.md](TRADEMARKS.md).</sub>
 
 ## Prior art
 
