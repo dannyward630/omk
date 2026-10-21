@@ -6,10 +6,11 @@ It does not grant any right to a name, logo, or other mark.
 "OMK" and "Open Multi-Agent Kit", together with the OMK mark in
 readmeasset/omk-mark.svg and readmeasset/omk-hero.svg, identify this project.
 
-"AdaptOrch", together with the AdaptOrch mark in readmeasset/adaptorch-mark.svg
-and readmeasset/omk-adaptorch-banner.svg, identifies a separate proprietary
-product at https://adaptorch.com and appears here with permission. Those files
-are excluded from the MIT grant in LICENSE.
+"AdaptOrch", together with the AdaptOrch mark in readmeasset/adaptorch/adaptorch-mark.svg
+and readmeasset/adaptorch/omk-adaptorch-banner.svg, identifies a separate proprietary
+product at https://adaptorch.com and appears here with permission. The files in
+[readmeasset/adaptorch/](readmeasset/adaptorch/) are excluded from the MIT license
+in LICENSE; see [readmeasset/adaptorch/NOTICE](readmeasset/adaptorch/NOTICE).
 
 OMK and AdaptOrch are different products. OMK is this MIT-licensed local
 control plane. AdaptOrch is a separate commercial evidence layer that OMK

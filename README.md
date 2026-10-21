@@ -413,7 +413,7 @@ setting off the prompt is byte-identical to one built without a corpus.
 
 <a href="https://adaptorch.com/?utm_source=github&utm_medium=readme&utm_campaign=omk">
   <img
-    src="readmeasset/omk-adaptorch-banner.svg"
+    src="readmeasset/adaptorch/omk-adaptorch-banner.svg"
     alt="OMK writes and runs code. AdaptOrch checks what it wrote. correctness_claim: false — it ran, and this is what happened."
     width="100%"
   />
